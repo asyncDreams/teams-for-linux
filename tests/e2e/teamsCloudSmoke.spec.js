@@ -10,7 +10,12 @@ import {
 	closeAndCleanup,
 } from './helpers/electronApp.js';
 
-const require = createRequire(import.meta.url);
+// createRequire needs a filename to resolve relative requires; use the spec
+// file itself as anchor so `require('../../app/...')` resolves correctly
+// without relying on `import.meta` (which fails when the package has no
+// `"type":"module"` — see CI run 31493777088: SyntaxError: Cannot use
+// 'import.meta' outside a module).
+const require = createRequire(join(process.cwd(), 'tests/e2e/teamsCloudSmoke.spec.js'));
 
 const TEAMS_HOSTNAMES = new Set([
 	'teams.cloud.microsoft',
@@ -74,7 +79,9 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 			//    `require is not defined` sandbox error that
 			//    `electronApp.evaluate` hits in the Playwright main-process
 			//    UtilityScript context (see CI run 31493033541).
-			const d = require('../../app/config/defaults');
+			//    Use an absolute path so the anchor file choice above does not
+			//    affect resolution.
+			const d = require(join(process.cwd(), 'app/config/defaults'));
 			const hostProbe = {
 				canonicalIsTeamsHost: d.isTeamsHost('teams.cloud.microsoft'),
 				legacyIsTeamsHost: d.isTeamsHost('teams.microsoft.com'),
@@ -223,7 +230,7 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 			// UtilityScript sandbox (CI 31493033541). The extractor is a
 			// plain CommonJS module, so Node and the Electron main process
 			// share the same implementation.
-			const ex = require('../../app/browser/tools/notificationExtractor');
+			const ex = require(join(process.cwd(), 'app/browser/tools/notificationExtractor'));
 			const probe = {
 				kindsIncludeMention: ex.KINDS.includes('mention'),
 				classifyMention: ex.classifyKind({ title: 'mention test' }),
@@ -255,7 +262,7 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 			// which hits the same "require is not defined" sandbox issue.
 			let perfProbe;
 			try {
-				const perf = require('../../app/utils/perf');
+				const perf = require(join(process.cwd(), 'app/utils/perf'));
 				perfProbe = {
 					hasMark: typeof perf.mark === 'function',
 					hasElapsed: typeof perf.elapsedMs === 'function',
