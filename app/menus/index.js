@@ -463,13 +463,40 @@ class Menus {
   }
 
   forcePip() {
-    const script = `document.querySelectorAll('div[data-type="screen-sharing"] video').forEach(v => {v.removeAttribute("disablepictureinpicture"); v.requestPictureInPicture();})`;
-    this.window.webContents.executeJavaScript(script, true);
+    const script = `(() => {
+      const candidates = [
+        ...document.querySelectorAll('div[data-type="screen-sharing"] video'),
+        ...document.querySelectorAll('[data-tid*="stage"] video, [data-tid*="meeting"] video')
+      ];
+      const seen = new Set();
+      const videos = candidates.filter(v => { if (seen.has(v)) return false; seen.add(v); return true; });
+      const target = videos[0] || document.querySelector('video');
+      if (!target) {
+        console.warn('[Video] No video element found for PiP');
+        return 'no-video';
+      }
+      try { target.removeAttribute('disablepictureinpicture'); } catch {}
+      // Prefer browser PiP; fallback to Document PiP if available and video has no srcObject
+      const p = target.requestPictureInPicture ? target.requestPictureInPicture() : Promise.reject(new Error('PiP unsupported'));
+      p.catch(e => console.warn('[Video] PiP failed', e && e.message || e));
+      return 'pip-requested';
+    })()`;
+    this.window.webContents.executeJavaScript(script, true).catch(() => {});
   }
 
   forceVideoControls() {
-    const script = `document.querySelectorAll('video').forEach(v => {v.removeAttribute("disablepictureinpicture"); v.toggleAttribute("controls");})`;
-    this.window.webContents.executeJavaScript(script, true);
+    const script = `(() => {
+      const videos = document.querySelectorAll('video');
+      if (!videos.length) return 'no-video';
+      videos.forEach(v => {
+        try { v.removeAttribute('disablepictureinpicture'); } catch {}
+        try { v.toggleAttribute('controls'); } catch {}
+        // Ensure PiP button is not hidden by Teams' overlay when controls appear
+        try { v.style.setProperty('object-fit', 'contain', 'important'); } catch {}
+      });
+      return 'toggled:' + videos.length;
+    })()`;
+    this.window.webContents.executeJavaScript(script, true).catch(() => {});
   }
 
   joinMeeting() {

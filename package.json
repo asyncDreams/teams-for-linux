@@ -105,7 +105,8 @@
       "desktop": {
         "entry": {
           "Name": "Teams for Linux",
-          "Comment": "Unofficial client for Microsoft Teams for Linux"
+          "Comment": "Unofficial client for Microsoft Teams for Linux",
+          "MimeType": "x-scheme-handler/msteams;"
         }
       },
       "target": [

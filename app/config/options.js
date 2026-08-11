@@ -716,6 +716,30 @@ module.exports = {
         type: "boolean",
         applyMode: "restart",
       },
+      presence: {
+        default: {
+          graphPoll: {
+            enabled: false,
+            intervalMs: 60000,
+          },
+        },
+        describe:
+          "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). Off by default because the Teams token lacks Presence.Read scope and returns 403 until the tenant grants consent — see graph-api-integration-research.md. PII-safe: only availability/activity strings are mapped to status codes; raw Graph payloads are never logged.",
+        type: "object",
+        fields: {
+          "graphPoll.enabled": {
+            type: "boolean",
+            describe:
+              "Enable Graph presence polling as a hybrid correction layer on top of DOM scraping; requires graphApi.enabled and Presence.Read consent, otherwise polls are skipped gracefully.",
+          },
+          "graphPoll.intervalMs": {
+            type: "number",
+            describe:
+              "Poll interval in milliseconds for Graph /me/presence when graphPoll is enabled.",
+          },
+        },
+        applyMode: "restart",
+      },
       media: {
         default: {
           microphone: {
@@ -730,11 +754,12 @@ module.exports = {
           },
           video: { menuEnabled: false },
           showStatusOnDockIcon: false,
+          showStatusOnTrayIcon: false,
           macPerformanceMode: true,
           preventDeviceSwitching: false,
         },
         describe:
-          "Media settings for microphone, camera, and video. showStatusOnDockIcon: overlay the user presence status on the Dock icon on macOS. macPerformanceMode: on macOS, force-enable native hardware/rendering optimizations (Metal ANGLE, GPU rasterization, hardware WebRTC codecs) at startup; defaults to true, set false to opt out without disabling the GPU entirely. preventDeviceSwitching: prevent automatic audio/video device switching by blocking device change notifications.",
+          "Media settings for microphone, camera, and video. showStatusOnDockIcon: overlay the user presence status on the Dock icon on macOS. showStatusOnTrayIcon: overlay the user presence status as a small dot on the Linux/Windows tray icon (requires trayIconEnabled). macPerformanceMode: on macOS, force-enable native hardware/rendering optimizations (Metal ANGLE, GPU rasterization, hardware WebRTC codecs) at startup; defaults to true, set false to opt out without disabling the GPU entirely. preventDeviceSwitching: prevent automatic audio/video device switching by blocking device change notifications.",
         type: "object",
         fields: {
           "microphone.disableAutogain": {
@@ -814,6 +839,11 @@ module.exports = {
             type: "boolean",
             describe:
               "Overlay the user presence status on the Dock icon on macOS.",
+          },
+          "showStatusOnTrayIcon": {
+            type: "boolean",
+            describe:
+              "Overlay the user presence status as a dot on the tray icon on Linux/Windows; requires trayIconEnabled. Off by default.",
           },
           "macPerformanceMode": {
             type: "boolean",

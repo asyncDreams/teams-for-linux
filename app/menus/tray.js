@@ -21,9 +21,8 @@ class ApplicationTray {
   }
 
   #handleTrayUpdate(_event, data) {
-    // Handle both old format { icon, flash } and new format { icon, flash, count }
-    const { icon, flash, count } = data;
-    this.updateTrayImage(icon, flash, count);
+    const { icon, flash, count, presence } = data || {};
+    this.updateTrayImage(icon, flash, count, presence);
   }
 
   getIconImage(iconPath) {
@@ -56,18 +55,18 @@ class ApplicationTray {
     }
   }
 
-  updateTrayImage(iconUrl, flash, count) {
+  updateTrayImage(iconUrl, flash, count, presence) {
     if (this.tray && !this.tray.isDestroyed()) {
-      // Use original icon path if iconUrl is null/undefined
       const effectiveIconPath = iconUrl || this.iconPath;
       const image = this.getIconImage(effectiveIconPath);
-
       this.tray.setImage(image);
       this.window.flashFrame(flash);
-
       const baseTitle = this.config.appTitle;
-      const tooltip = count > 0 ? `${baseTitle} (${count})` : baseTitle;
-      this.tray.setToolTip(tooltip);
+      const PRESENCE_LABELS = { 1: "Available", 2: "Busy", 3: "Do not disturb", 4: "Away", 5: "Be right back" };
+      const parts = [baseTitle];
+      if (count > 0) parts.push(`(${count})`);
+      if (presence && PRESENCE_LABELS[presence]) parts.push(`— ${PRESENCE_LABELS[presence]}`);
+      this.tray.setToolTip(parts.join(" "));
     }
   }
 
