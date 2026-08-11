@@ -487,6 +487,11 @@ class Menus {
 
   async joinMeetingWithUrl(meetingUrl) {
     try {
+      // Normalize legacy hosts when autoRedirect is on — the dialog/clipboard
+      // can hold a teams.microsoft.com link copied from an external invite.
+      if (this.configGroup.startupConfig.hosts?.autoRedirect !== false) {
+        meetingUrl = teamsHosts.normalizeTeamsUrl(meetingUrl);
+      }
       // Validate the incoming URL up front so a parse failure or a
       // non-matching URL falls through to the outer catch rather than
       // ending up assigned raw inside the Teams window.

@@ -333,17 +333,27 @@ class NotificationService {
         try {
           const win = this.#mainWindow.getWindow();
           if (!win || win.isDestroyed()) return false;
-          // For https links, navigate inside the Teams window
+          // For https links, navigate inside the Teams window. Normalize legacy
+          // hosts when autoRedirect is on so a legacy-host deepLink (e.g. from
+          // a stale Notification deepLink) canonicalizes rather than opening a
+          // second origin.
           if (deepLink.startsWith("https://")) {
+            const target =
+              this.#config.hosts?.autoRedirect !== false
+                ? teamsHosts.normalizeTeamsUrl(deepLink)
+                : deepLink;
             win.show();
             win.focus();
-            win.loadURL(deepLink, { userAgent: this.#config.chromeUserAgent }).catch(() => {
+            win.loadURL(target, { userAgent: this.#config.chromeUserAgent }).catch(() => {
               console.debug("[NOTIFICATIONS] Deep link navigation failed");
             });
             return true;
           }
           if (deepLink.startsWith("msteams:")) {
-            const httpsUrl = deepLink.replace(/^msteams:/, "https:");
+            let httpsUrl = deepLink.replace(/^msteams:/, "https:");
+            if (this.#config.hosts?.autoRedirect !== false) {
+              httpsUrl = teamsHosts.normalizeTeamsUrl(httpsUrl);
+            }
             win.show();
             win.focus();
             win.loadURL(httpsUrl, { userAgent: this.#config.chromeUserAgent }).catch(() => {

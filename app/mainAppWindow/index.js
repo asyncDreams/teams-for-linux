@@ -387,8 +387,10 @@ const AUTH_FAILURE_PATTERNS = ['InteractionRequired', 'interaction_required'];
 // clear-and-reload on its own. Recovery from a UPR happens only through an
 // explicit user action (the banner click, or the mid-call prompt).
 const OPT_IN_AUTH_FAILURE_PATTERNS = ['Uncaught Error: UPR:'];
-// Only trust auth failure signals from Teams/Microsoft origins
-const TRUSTED_AUTH_SOURCES = ['teams.cloud.microsoft', 'teams.microsoft.com', 'login.microsoftonline.com'];
+// Only trust auth failure signals from Teams/Microsoft origins. Derive Teams
+// sources from the canonical host table so a future host addition is covered;
+// login.microsoftonline.com stays literal (not a Teams host, it's the IdP).
+const TRUSTED_AUTH_SOURCES = [...teamsHosts.TEAMS_HOSTS, 'login.microsoftonline.com'];
 // Loop guard for the automatic clear-and-reload. A cooldown rather than a
 // single-shot flag: a long-running app can hit a second stale session hours
 // after the first recovery (observed in the field: recovery at 10:55, the
@@ -1045,9 +1047,12 @@ function restoreWindow() {
 function processArgs(args) {
   // Legacy Teams protocol format: msteams:/l/meetup-join/...
   const v1msTeams = new RegExp(config.msTeamsProtocols.v1);
-  // Modern Teams protocol format: msteams://teams.microsoft.com/l/...
+  // Modern Teams protocol format: msteams://teams.cloud.microsoft/l/... (and legacy hosts)
   const v2msTeams = new RegExp(config.msTeamsProtocols.v2);
   console.debug("processArgs:", args);
+  const shouldNormalize = config?.hosts?.autoRedirect !== false;
+  const maybeNormalize = (url) =>
+    shouldNormalize ? teamsHosts.normalizeTeamsUrl(url) : url;
   for (const arg of args) {
     console.debug(
       `testing RegExp processArgs ${new RegExp(config.meetupJoinRegEx).test(
@@ -1057,17 +1062,18 @@ function processArgs(args) {
     if (new RegExp(config.meetupJoinRegEx).test(arg)) {
       console.debug("A url argument received with https protocol");
       window.show();
-      return arg;
+      return maybeNormalize(arg);
     }
     if (v1msTeams.test(arg)) {
       console.debug("A url argument received with msteams v1 protocol");
       window.show();
+      // v1 is host-independent (msteams:/l/...) — prepend canonical origin
       return config.url + arg.substring(8, arg.length);
     }
     if (v2msTeams.test(arg)) {
       console.debug("A url argument received with msteams v2 protocol");
       window.show();
-      return arg.replace("msteams", "https");
+      return maybeNormalize(arg.replace("msteams", "https"));
     }
   }
 }
@@ -1262,7 +1268,11 @@ function onNewWindow(details) {
 
   if (new RegExp(config.meetupJoinRegEx).test(details.url)) {
     if (config.onNewWindowOpenMeetupJoinUrlInApp) {
-      window.loadURL(details.url, { userAgent: config.chromeUserAgent });
+      const targetUrl =
+        config?.hosts?.autoRedirect !== false
+          ? teamsHosts.normalizeTeamsUrl(details.url)
+          : details.url;
+      window.loadURL(targetUrl, { userAgent: config.chromeUserAgent });
     }
     return { action: "deny" };
   } else if (
