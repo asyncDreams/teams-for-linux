@@ -1,7 +1,7 @@
 {
   "$generatedBy": "scripts/generateConfigDocs.js",
   "source": "app/config/options.js",
-  "optionCount": 72,
+  "optionCount": 73,
   "options": [
     {
       "name": "appActiveCheckInterval",
@@ -415,10 +415,13 @@
         "timeoutType": "default",
         "electron": {
           "clickAction": "show"
-        }
+        },
+        "grouping": false,
+        "actions": false,
+        "avatar": false
       },
-      "description": "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing).",
-      "applyMode": "restart",
+      "description": "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
+      "applyMode": "live",
       "fields": [
         {
           "path": "timeoutType",
@@ -440,6 +443,24 @@
             "restore",
             "none"
           ]
+        },
+        {
+          "path": "grouping",
+          "type": "boolean",
+          "default": false,
+          "description": "Coalesce notifications by conversation/channel via tag (when true, notifications from the same chat/channel replace each other). Off by default for one beta."
+        },
+        {
+          "path": "actions",
+          "type": "boolean",
+          "default": false,
+          "description": "Show actionable buttons (Reply / Mark as read / Open / Join) on Electron notifications where supported. Off by default for one beta."
+        },
+        {
+          "path": "avatar",
+          "type": "boolean",
+          "default": false,
+          "description": "Fetch and display sender avatar in notifications when available (uses notification payload icon or Graph People photo). Off by default."
         }
       ]
     },
@@ -553,7 +574,7 @@
     {
       "name": "meetupJoinRegEx",
       "type": "string",
-      "default": "^https://teams\\.(?:microsoft\\.com|live\\.com|cloud\\.microsoft)/(v2/\\?meetingjoin=|meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
+      "default": "^https://teams\\.(?:cloud\\.microsoft|microsoft\\.com|live\\.com)/(v2/\\?meetingjoin=|meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
       "description": "Regex for Teams meetup-join and related links",
       "applyMode": "restart"
     },
@@ -686,9 +707,9 @@
       "type": "object",
       "default": {
         "v1": "^msteams:/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
-        "v2": "^msteams://teams\\.(?:microsoft\\.com|live\\.com|cloud\\.microsoft)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)"
+        "v2": "^msteams://teams\\.(?:cloud\\.microsoft|microsoft\\.com|live\\.com)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)"
       },
-      "description": "Regular expressions for Microsoft Teams protocol links (v1 and v2).",
+      "description": "Regular expressions for Microsoft Teams protocol links (v1 and v2). Derived from the Teams host table in defaults.js — host set is not configured directly here.",
       "applyMode": "restart",
       "fields": [
         {
@@ -700,7 +721,7 @@
         {
           "path": "v2",
           "type": "string",
-          "default": "^msteams://teams\\.(?:microsoft\\.com|live\\.com|cloud\\.microsoft)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
+          "default": "^msteams://teams\\.(?:cloud\\.microsoft|microsoft\\.com|live\\.com)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
           "description": "Regular expression matching host-based msteams:// scheme protocol links."
         }
       ]
@@ -711,6 +732,23 @@
       "default": "https://teams.cloud.microsoft",
       "description": "Microsoft Teams URL",
       "applyMode": "restart"
+    },
+    {
+      "name": "hosts",
+      "type": "object",
+      "default": {
+        "autoRedirect": true
+      },
+      "description": "Teams host handling. autoRedirect: when true (the default), navigating to a legacy Teams host (teams.microsoft.com / teams.live.com) is normalized to the canonical host teams.cloud.microsoft, preserving path, search, and hash. Set false to keep legacy hosts verbatim — useful if a conditional-access rule is pinned to the old host. MCAS-proxied hosts (*.mcas.ms) are never rewritten.",
+      "applyMode": "restart",
+      "fields": [
+        {
+          "path": "autoRedirect",
+          "type": "boolean",
+          "default": true,
+          "description": "Normalize legacy Teams hosts to the canonical host on navigation. When false, legacy hosts are left as-is."
+        }
+      ]
     },
     {
       "name": "useMutationTitleLogic",
