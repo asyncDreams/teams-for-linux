@@ -34,6 +34,8 @@ const WebAuthn = require("./webauthn");
 const os = require("node:os");
 const isMac = os.platform() === "darwin";
 
+const perf = require("./utils/perf");
+
 const { NETWORK_ERROR_PATTERNS } = require("./config/defaults");
 
 function isNetworkError(message) {
@@ -79,7 +81,9 @@ if (process.env.E2E_USER_DATA_DIR) {
 }
 
 // This must be executed before loading the config file.
+perf.mark("index:enter");
 CommandLineManager.addSwitchesBeforeConfigLoad();
+perf.mark("index:switchesBeforeConfig");
 
 const { AppConfiguration } = require("./appConfiguration");
 const appConfig = new AppConfiguration(
@@ -90,7 +94,9 @@ const appConfig = new AppConfiguration(
 const config = appConfig.startupConfig;
 config.appPath = path.join(__dirname, app.isPackaged ? "../../" : "");
 
+perf.mark("index:configLoaded");
 CommandLineManager.addSwitchesAfterConfigLoad(config);
+perf.mark("index:switchesAfterConfig");
 
 // ADR-020: multi-account is mutually exclusive with Intune MAM.
 // The Linux D-Bus Microsoft Identity Broker has undocumented behavior
@@ -195,10 +201,12 @@ if (!app.isDefaultProtocolClient(protocolClient, process.execPath)) {
 
 if (gotTheLock) {
   app.on("second-instance", mainAppWindow.onAppSecondInstance);
+  app.once("ready", () => perf.mark("app:ready"));
   app.on("ready", handleAppReady);
   app.on("quit", () => console.debug("quit"));
   app.on("render-process-gone", onRenderProcessGone);
   app.on("will-quit", async () => {
+    perf.stopMemorySampling();
     console.debug("will-quit");
     if (mqttClient) {
       await mqttClient.disconnect();
@@ -705,7 +713,9 @@ function initializeAutoUpdater() {
 
 async function handleAppReady() {
   try {
+    perf.mark("handleAppReady:enter");
     await showConfigurationDialogs();
+    perf.mark("handleAppReady:dialogsDone");
 
     process.on("SIGTRAP", onAppTerminated);
     process.on("SIGINT", onAppTerminated);
@@ -713,10 +723,12 @@ async function handleAppReady() {
     process.stdout.on("error", () => {});
 
     initializeCacheManagement();
+    perf.mark("handleAppReady:cacheInit");
 
     if (config.mqtt?.enabled) {
       initializeMqtt();
     }
+    perf.mark("handleAppReady:mqttInit");
 
     loadMenuToggleSettings();
 
@@ -725,6 +737,7 @@ async function handleAppReady() {
 
     const customStickers = new CustomStickers(app, config);
     customStickers.initialize();
+    perf.mark("handleAppReady:customInit");
 
     // Smartcard / NSS client-certificate PIN dialog (Linux only, issue #2639).
     // Registered before the main window loads so the handler exists before the
@@ -737,8 +750,10 @@ async function handleAppReady() {
     // so it covers the very first TLS handshake, and before profile partitions
     // exist so their sessions are caught by the session-created listener.
     certificateModule.installCertificateVerifyProc(config, app, session.defaultSession);
+    perf.mark("handleAppReady:certInit");
 
     await mainAppWindow.onAppReady(appConfig, customBackground, screenSharingService, profilesManager);
+    perf.mark("handleAppReady:mainWindowReady");
 
     // Wire per-profile WebContentsView lifecycle once the main window
     // exists. Bootstrap Profile 0 from the legacy partition so a
@@ -764,20 +779,31 @@ async function handleAppReady() {
     if (process.platform === "linux" && config.auth?.webauthn?.enabled) {
       await WebAuthn.initialize(mainAppWindow.getWindow(), config);
     }
+    perf.mark("handleAppReady:webauthnInit");
 
     initializeGraphApiClient();
     registerGraphApiHandlers(ipcMain, graphApiClient);
     initializeQuickChat();
     registerGlobalShortcuts(config, mainAppWindow, app);
     initializeAutoUpdater();
+    perf.mark("handleAppReady:graphQuickChatShortcuts");
 
     // Attach the download manager after the partition is provisioned by the
     // main window. Issue #2512: without this, file downloads from Teams are
     // silent and the user gets no completion feedback.
     downloadManager.initialize(session.fromPartition(config.partition));
+    perf.mark("handleAppReady:downloadInit");
 
     console.info('[IPC Security] Channel allowlisting enabled');
     console.info(`[IPC Security] ${allowedChannels.size} channels allowlisted`);
+    perf.mark("handleAppReady:ready");
+    perf.sampleMemory("ready");
+    // Opt-in periodic memory sampling — enabled when file logging is on so
+    // diagnostics include a 5-minute RSS/heap snapshot without spamming
+    // console-only runs. Interval is fixed to avoid a new config knob in 0C.
+    if (config.logConfig?.transports?.file?.level) {
+      perf.startMemorySampling(5 * 60 * 1000);
+    }
   } catch (error) {
     console.error('[STARTUP] Fatal error during app initialization:', { message: error.message, stack: error.stack });
     app.quit();
