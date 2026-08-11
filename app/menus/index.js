@@ -13,6 +13,7 @@ const { fileURLToPath } = require("node:url");
 const appMenu = require("./appMenu");
 const buildProfilesMenu = require("./profilesMenu");
 const Tray = require("./tray");
+const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
@@ -377,6 +378,7 @@ class Menus {
       disableNotificationWindowFlash: this.configGroup.startupConfig.disableNotificationWindowFlash,
       disableBadgeCount: this.configGroup.startupConfig.disableBadgeCount,
       defaultNotificationUrgency: this.configGroup.startupConfig.defaultNotificationUrgency,
+      notifications: this.configGroup.startupConfig.notifications,
     });
   }
 
@@ -433,6 +435,30 @@ class Menus {
   setNotificationUrgency(value) {
     this.configGroup.startupConfig.defaultNotificationUrgency = value;
     this.configGroup.legacyConfigStore.set("defaultNotificationUrgency", value);
+    this.updateMenu();
+  }
+
+  toggleNotificationGrouping() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.grouping = !cur.grouping;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
+    this.updateMenu();
+  }
+
+  toggleNotificationActions() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.actions = !cur.actions;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
+    this.updateMenu();
+  }
+
+  toggleNotificationAvatar() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.avatar = !cur.avatar;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
     this.updateMenu();
   }
 
@@ -525,16 +551,7 @@ class Menus {
   }
 
   #isValidTeamsUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    try {
-      const { protocol, hostname } = new URL(url);
-      return (
-        protocol === 'https:' &&
-        /(^|\.)teams\.(microsoft\.com|live\.com|cloud\.microsoft)$/.test(hostname)
-      );
-    } catch {
-      return false;
-    }
+    return teamsHosts.isValidTeamsUrl(url);
   }
 
   showDocumentation() {

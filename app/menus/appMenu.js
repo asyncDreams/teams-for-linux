@@ -164,6 +164,27 @@ function getNotificationsMenu(Menus) {
         click: () => Menus.toggleDisableBadgeCount(),
       },
       {
+        type: "separator",
+      },
+      {
+        label: "Group by conversation",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.grouping,
+        click: () => Menus.toggleNotificationGrouping(),
+      },
+      {
+        label: "Show notification actions",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.actions,
+        click: () => Menus.toggleNotificationActions(),
+      },
+      {
+        label: "Show sender avatar",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.avatar,
+        click: () => Menus.toggleNotificationAvatar(),
+      },
+      {
         label: "Urgency",
         submenu: [
           {

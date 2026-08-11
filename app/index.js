@@ -626,6 +626,19 @@ function loadMenuToggleSettings() {
       config[setting] = appConfig.legacyConfigStore.get(setting);
     }
   }
+  // notifications object toggles (grouping/actions/avatar) — live toggles
+  if (appConfig.legacyConfigStore.has('notifications')) {
+    const stored = appConfig.legacyConfigStore.get('notifications');
+    if (stored && typeof stored === 'object') {
+      config.notifications = { ...(config.notifications || {}), ...stored };
+      if (stored.electron && typeof stored.electron === 'object') {
+        config.notifications.electron = {
+          ...(config.notifications.electron || {}),
+          ...stored.electron,
+        };
+      }
+    }
+  }
 }
 
 function initializeGraphApiClient() {
@@ -638,6 +651,11 @@ function initializeGraphApiClient() {
     console.debug("[GRAPH_API] Graph API client initialized with main window");
   } else {
     console.warn("[GRAPH_API] Main window not available, Graph API client not fully initialized");
+  }
+  // Wire Graph client into the notification service so Reply actions can call
+  // Graph sendChatMessage; service gracefully falls back to deepLink when absent.
+  if (graphApiClient && typeof notificationService.setGraphApiClient === "function") {
+    notificationService.setGraphApiClient(graphApiClient);
   }
 }
 

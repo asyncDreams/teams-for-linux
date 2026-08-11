@@ -5,14 +5,14 @@
  *
  * These tests verify that the meetupJoinRegEx pattern correctly matches
  * various Teams meeting URL formats. This is critical because Microsoft
- * occasionally changes URL formats.
+ * occasionally changes URL formats. The pattern is derived from the
+ * host table in app/config/defaults.js.
  */
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 
-// The default regex pattern from app/config/index.js
-const meetupJoinRegEx = String.raw`^https://teams\.(?:microsoft|live)\.com/(meet|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team))/`;
+const { meetupJoinRegEx } = require('../../app/config/defaults');
 
 function isValidTeamsMeetingUrl(text) {
   if (typeof text !== 'string') {
@@ -35,6 +35,10 @@ describe('Teams Meeting URL Validation', () => {
       // Meet format (personal meetings)
       ['https://teams.microsoft.com/meet/user@example.com', 'meet format'],
       ['https://teams.live.com/meet/user@example.com', 'teams.live.com meet'],
+
+      // teams.cloud.microsoft (canonical)
+      ['https://teams.cloud.microsoft/l/meetup-join/19%3ameeting_abc123@thread.v2/0', 'canonical meetup-join'],
+      ['https://teams.cloud.microsoft/meet/user@example.com', 'canonical meet'],
 
       // Channel meetings
       ['https://teams.microsoft.com/l/channel/19%3achannel_abc123', 'channel format'],

@@ -23,6 +23,7 @@ const ssoPasswordPrefill = require("../ssoPasswordPrefill");
 const BrowserWindowManager = require("../mainAppWindow/browserWindowManager");
 const os = require("node:os");
 const path = require("node:path");
+const teamsHosts = require("../config/defaults");
 
 const DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG = {
   enabled: true,
@@ -226,30 +227,18 @@ function createScreenSharePreviewWindow() {
   });
 }
 
-// Microsoft Cloud App Security proxy suffix. Tenants that route Teams
-// through Defender for Cloud Apps (MCAS) load and store cookies at
-// `*.mcas.ms` rather than the underlying Microsoft domain. Strip the
-// suffix before matching against AUTH_DOMAINS / TEAMS_DOMAINS so the
-// proxied flavour is treated the same as the canonical hostname.
-const MCAS_SUFFIX = '.mcas.ms';
-function stripMcasSuffix(hostname) {
-  return hostname.endsWith(MCAS_SUFFIX)
-    ? hostname.slice(0, -MCAS_SUFFIX.length)
-    : hostname;
-}
+// Microsoft Cloud App Security proxy suffix — sourced from the host table
+// (app/config/defaults.js) so MCAS handling stays consistent across main,
+// preload, and menus. Tenants that route Teams through Defender for Cloud
+// Apps store cookies at `*.mcas.ms` rather than the underlying Microsoft
+// domain. Strip the suffix before matching so the proxied flavour is
+// treated the same as the canonical hostname.
+const MCAS_SUFFIX = teamsHosts.MCAS_SUFFIX;
+const stripMcasSuffix = teamsHosts.stripMcasSuffix;
 
-// Microsoft auth domains whose cookies should be checked/cleaned
-const AUTH_DOMAINS = [
-  'login.microsoftonline.com',
-  'login.microsoft.com',
-  'teams.microsoft.com',
-  'teams.cloud.microsoft',
-  'microsoft.com',
-  'office.com',
-  'office365.com',
-  'live.com',
-  'microsoftonline.com',
-];
+// Microsoft auth domains whose cookies should be checked/cleaned — derived
+// from the host table so a host-table change propagates automatically.
+const AUTH_DOMAINS = teamsHosts.AUTH_DOMAINS;
 
 // Azure AD / MSAL / SharePoint auth cookie names
 const AUTH_COOKIE_NAMES = new Set([
@@ -936,6 +925,29 @@ function applySpellCheckerConfiguration(languages, window) {
 function onDidFinishLoad() {
   console.debug("did-finish-load");
 
+  // Auto-redirect legacy Teams hosts to the canonical host when enabled.
+  // Runs before script injection so customCSS / screen-share injection land
+  // on the canonical origin. MCAS-wrapped navigations are never rewritten.
+  try {
+    const currentUrl = window.webContents.getURL();
+    if (
+      config?.hosts?.autoRedirect !== false &&
+      currentUrl.startsWith("https://")
+    ) {
+      const normalized = teamsHosts.normalizeTeamsUrl(currentUrl);
+      if (normalized !== currentUrl) {
+        console.info("[HOST_REDIRECT] Normalizing legacy Teams host to canonical", {
+          fromHost: (() => { try { return new URL(currentUrl).hostname; } catch { return "unknown"; } })(),
+          toHost: teamsHosts.TEAMS_CANONICAL_HOST,
+        });
+        window.loadURL(normalized, { userAgent: config.chromeUserAgent });
+        return;
+      }
+    }
+  } catch {
+    // host redirect is best-effort; a parse failure just falls through
+  }
+
   // Skip script injection on Chrome error pages (e.g. chrome-error://chromewebdata/)
   // which appear when navigation fails due to network errors like ERR_NAME_NOT_RESOLVED.
   // Injecting scripts into these pages causes crashes because APIs like
@@ -1146,13 +1158,8 @@ function onBeforeRequestHandler(details, callback) {
   }
 }
 
-// Teams domains whose enforcing CSP we never touch
-const TEAMS_DOMAINS = [
-  'teams.cloud.microsoft',
-  'teams.microsoft.com',
-  'teams.live.com',
-  'statics.teams.cdn.office.net',
-];
+// Teams domains whose enforcing CSP we never touch — derived from host table
+const TEAMS_DOMAINS = [...teamsHosts.TEAMS_HOSTS, ...teamsHosts.TEAMS_CDN_HOSTS];
 
 /**
  * Checks whether a URL belongs to a Teams domain.
@@ -1167,16 +1174,11 @@ function isTeamsDomain(url) {
   }
 }
 
-// Microsoft Identity Platform login hostnames. When Teams opens a popup to
-// one of these it is requesting interactive re-authentication (e.g. the
-// "sign in again" banner). Kept separate from AUTH_DOMAINS because that
-// list includes broad domains used for cookie scoping; this narrower set
-// is only the endpoints that initiate an OAuth/OIDC interactive flow.
-const AUTH_LOGIN_DOMAINS = [
-  'login.microsoftonline.com',
-  'login.microsoft.com',
-  'login.live.com',
-];
+// Microsoft Identity Platform login hostnames — sourced from host table.
+// Kept separate from AUTH_DOMAINS because that list includes broad domains
+// used for cookie scoping; this narrower set is only the endpoints that
+// initiate an OAuth/OIDC interactive flow.
+const AUTH_LOGIN_DOMAINS = teamsHosts.AUTH_LOGIN_DOMAINS;
 
 /**
  * Returns true when the URL targets a Microsoft Identity Platform login page.
