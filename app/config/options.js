@@ -386,9 +386,12 @@ module.exports = {
           electron: {
             clickAction: "show",
           },
+          grouping: false,
+          actions: false,
+          avatar: false,
         },
         describe:
-          "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing).",
+          "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
         type: "object",
         fields: {
           "timeoutType": {
@@ -403,8 +406,23 @@ module.exports = {
               "What clicking an Electron notification does to the main window (notificationMethod `electron` only): `show` reveals the window (default), `restore` also un-minimises and focuses it (helps on GNOME), `none` does nothing.",
             choices: ["show", "restore", "none"],
           },
+          "grouping": {
+            type: "boolean",
+            describe:
+              "Coalesce notifications by conversation/channel via tag (when true, notifications from the same chat/channel replace each other). Off by default for one beta.",
+          },
+          "actions": {
+            type: "boolean",
+            describe:
+              "Show actionable buttons (Reply / Mark as read / Open / Join) on Electron notifications where supported. Off by default for one beta.",
+          },
+          "avatar": {
+            type: "boolean",
+            describe:
+              "Fetch and display sender avatar in notifications when available (uses notification payload icon or Graph People photo). Off by default.",
+          },
         },
-        applyMode: "restart",
+        applyMode: "live",
       },
       disableBadgeCount: {
         default: false,
@@ -638,11 +656,11 @@ module.exports = {
       },
       msTeamsProtocols: {
         default: {
-          v1: "^msteams:/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
-          v2: String.raw`^msteams://teams\.(?:microsoft\.com|live\.com|cloud\.microsoft)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)`,
+          v1: defaults.MS_TEAMS_PROTOCOL_V1,
+          v2: defaults.msTeamsProtocolV2,
         },
         describe:
-          "Regular expressions for Microsoft Teams protocol links (v1 and v2).",
+          "Regular expressions for Microsoft Teams protocol links (v1 and v2). Derived from the Teams host table in defaults.js — host set is not configured directly here.",
         type: "object",
         fields: {
           "v1": {
@@ -662,6 +680,22 @@ module.exports = {
         default: "https://teams.cloud.microsoft",
         describe: "Microsoft Teams URL",
         type: "string",
+        applyMode: "restart",
+      },
+      hosts: {
+        default: {
+          autoRedirect: true,
+        },
+        describe:
+          "Teams host handling. autoRedirect: when true (the default), navigating to a legacy Teams host (teams.microsoft.com / teams.live.com) is normalized to the canonical host teams.cloud.microsoft, preserving path, search, and hash. Set false to keep legacy hosts verbatim — useful if a conditional-access rule is pinned to the old host. MCAS-proxied hosts (*.mcas.ms) are never rewritten.",
+        type: "object",
+        fields: {
+          "autoRedirect": {
+            type: "boolean",
+            describe:
+              "Normalize legacy Teams hosts to the canonical host on navigation. When false, legacy hosts are left as-is.",
+          },
+        },
         applyMode: "restart",
       },
       useMutationTitleLogic: {

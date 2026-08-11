@@ -41,6 +41,8 @@ const allowedChannels = new Set([
   // Notifications and user interaction
   'play-notification-sound',
   'show-notification',
+  // Structured notification payload (Phase 1 parity — sender/kind/grouping/avatar)
+  'show-notification-v2',
   'notification-closed',
   'notification-show-toast',
   'notification-toast-click',
