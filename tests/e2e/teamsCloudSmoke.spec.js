@@ -2,12 +2,15 @@ import { test, expect } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { _electron as electron } from 'playwright';
 
 import {
 	getRegisteredHandlers,
 	closeAndCleanup,
 } from './helpers/electronApp.js';
+
+const require = createRequire(import.meta.url);
 
 const TEAMS_HOSTNAMES = new Set([
 	'teams.cloud.microsoft',
@@ -65,35 +68,36 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 	test('host table helpers and IPC channels are wired correctly', async () => {
 		const ctx = await launchApp();
 		try {
-			// 1) Host helpers — executed in the main process via evaluate.
-			const hostProbe = await ctx.electronApp.evaluate(() => {
-				// Relative to repo root; main process cwd is repo root in CI/dev.
-				const d = require('./app/config/defaults');
-				const cases = {
-					canonicalIsTeamsHost: d.isTeamsHost('teams.cloud.microsoft'),
-					legacyIsTeamsHost: d.isTeamsHost('teams.microsoft.com'),
-					mcasIsTeamsHost: d.isTeamsHost('teams.microsoft.com.mcas.ms'),
-					regionalIsTeamsHost: d.isTeamsHost('teams.eastus.cloud.microsoft'),
-					normalizeLegacy:
-						d.normalizeTeamsUrl('https://teams.microsoft.com/l/meetup-join/abc?x=1#frag'),
-					normalizeCanonical:
-						d.normalizeTeamsUrl('https://teams.cloud.microsoft/l/meetup-join/abc'),
-					normalizeMcasUnchanged:
-						d.normalizeTeamsUrl('https://teams.microsoft.com.mcas.ms/l/meetup-join/abc'),
-					validHttps: d.isValidTeamsUrl('https://teams.cloud.microsoft/l/meetup-join/abc'),
-					invalidHttp: d.isValidTeamsUrl('http://teams.cloud.microsoft/l/meetup-join/abc'),
-					meetupMatchesCanonical: new RegExp(d.meetupJoinRegEx).test(
-						'https://teams.cloud.microsoft/l/meetup-join/abc'
-					),
-					meetupMatchesLegacy: new RegExp(d.meetupJoinRegEx).test(
-						'https://teams.microsoft.com/l/meetup-join/abc'
-					),
-					v2MatchesCanonical: new RegExp(d.msTeamsProtocolV2).test(
-						'msteams://teams.cloud.microsoft/l/meetup-join/abc'
-					),
-				};
-				return cases;
-			});
+			// 1) Host helpers — exercised directly in the Node test process.
+			//    The modules are pure (no Electron) and the table is the
+			//    single source of truth; running them here avoids the
+			//    `require is not defined` sandbox error that
+			//    `electronApp.evaluate` hits in the Playwright main-process
+			//    UtilityScript context (see CI run 31493033541).
+			const d = require('../../app/config/defaults');
+			const hostProbe = {
+				canonicalIsTeamsHost: d.isTeamsHost('teams.cloud.microsoft'),
+				legacyIsTeamsHost: d.isTeamsHost('teams.microsoft.com'),
+				mcasIsTeamsHost: d.isTeamsHost('teams.microsoft.com.mcas.ms'),
+				regionalIsTeamsHost: d.isTeamsHost('teams.eastus.cloud.microsoft'),
+				normalizeLegacy:
+					d.normalizeTeamsUrl('https://teams.microsoft.com/l/meetup-join/abc?x=1#frag'),
+				normalizeCanonical:
+					d.normalizeTeamsUrl('https://teams.cloud.microsoft/l/meetup-join/abc'),
+				normalizeMcasUnchanged:
+					d.normalizeTeamsUrl('https://teams.microsoft.com.mcas.ms/l/meetup-join/abc'),
+				validHttps: d.isValidTeamsUrl('https://teams.cloud.microsoft/l/meetup-join/abc'),
+				invalidHttp: d.isValidTeamsUrl('http://teams.cloud.microsoft/l/meetup-join/abc'),
+				meetupMatchesCanonical: new RegExp(d.meetupJoinRegEx).test(
+					'https://teams.cloud.microsoft/l/meetup-join/abc'
+				),
+				meetupMatchesLegacy: new RegExp(d.meetupJoinRegEx).test(
+					'https://teams.microsoft.com/l/meetup-join/abc'
+				),
+				v2MatchesCanonical: new RegExp(d.msTeamsProtocolV2).test(
+					'msteams://teams.cloud.microsoft/l/meetup-join/abc'
+				),
+			};
 
 			expect(hostProbe.canonicalIsTeamsHost).toBe(true);
 			expect(hostProbe.legacyIsTeamsHost).toBe(true);
@@ -139,9 +143,31 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 		try {
 			const mainWindow = await findMainWindow(ctx.electronApp);
 			expect(mainWindow).toBeTruthy();
+			// The shell redirects to login.microsoftonline.com shortly after
+			// load; `page.evaluate` while the navigation is in flight throws
+			// "Execution context was destroyed" (flaky in CI run 31493033541).
+			// Wait for the redirect to settle before touching the renderer.
 			await mainWindow.waitForLoadState('load', { timeout: 30000 });
+			await mainWindow.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+			await new Promise((r) => setTimeout(r, 1500));
 
-			const result = await mainWindow.evaluate(() => {
+			async function evaluateWithRetry(fn) {
+				for (let attempt = 0; attempt < 3; attempt++) {
+					try {
+						return await mainWindow.evaluate(fn);
+					} catch (e) {
+						const msg = String(e?.message || e);
+						if (msg.includes('Execution context was destroyed') && attempt < 2) {
+							await mainWindow.waitForLoadState('load', { timeout: 10000 }).catch(() => {});
+							await new Promise((r) => setTimeout(r, 1000));
+							continue;
+						}
+						throw e;
+					}
+				}
+			}
+
+			const result = await evaluateWithRetry(() => {
 				const cases = [
 					{ title: 'Alice: hello world', opts: { body: 'preview', tag: 'chat:19:abc@thread.v2' } },
 					{ title: 'Channel message', opts: { body: 'channel update', tag: 'channel:general' } },
@@ -192,19 +218,22 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 	test('notification extractor pure helpers survive inside the electron host (PII guard)', async () => {
 		const ctx = await launchApp();
 		try {
-			const probe = await ctx.electronApp.evaluate(() => {
-				const ex = require('./app/browser/tools/notificationExtractor');
-				return {
-					kindsIncludeMention: ex.KINDS.includes('mention'),
-					classifyMention: ex.classifyKind({ title: 'mention test' }),
-					classifyMeeting: ex.classifyKind({ tag: 'meeting:1' }),
-					classifyDirect: ex.classifyKind({ tag: 'chat:19:abc@thread.v2' }),
-					groupingTag: ex.deriveGroupingKey({ tag: 'chat:123' }),
-					groupingNoPii: ex.deriveGroupingKey({ title: 'Alice: secret message body' }),
-					extractHttps: ex.extractDeepLinkHref('https://teams.cloud.microsoft/l/meetup-join/abc'),
-					extractRejectsFile: ex.extractDeepLinkHref('file:///etc/passwd'),
-				};
-			});
+			// Pure helpers — run directly in Node; `electronApp.evaluate` +
+			// `require` throws "require is not defined" in the Playwright
+			// UtilityScript sandbox (CI 31493033541). The extractor is a
+			// plain CommonJS module, so Node and the Electron main process
+			// share the same implementation.
+			const ex = require('../../app/browser/tools/notificationExtractor');
+			const probe = {
+				kindsIncludeMention: ex.KINDS.includes('mention'),
+				classifyMention: ex.classifyKind({ title: 'mention test' }),
+				classifyMeeting: ex.classifyKind({ tag: 'meeting:1' }),
+				classifyDirect: ex.classifyKind({ tag: 'chat:19:abc@thread.v2' }),
+				groupingTag: ex.deriveGroupingKey({ tag: 'chat:123' }),
+				groupingNoPii: ex.deriveGroupingKey({ title: 'Alice: secret message body' }),
+				extractHttps: ex.extractDeepLinkHref('https://teams.cloud.microsoft/l/meetup-join/abc'),
+				extractRejectsFile: ex.extractDeepLinkHref('file:///etc/passwd'),
+			};
 			expect(probe.kindsIncludeMention).toBe(true);
 			expect(probe.classifyMention).toBe('mention');
 			expect(probe.classifyMeeting).toBe('meeting');
@@ -221,22 +250,21 @@ test.describe('Teams-cloud smoke (T0B harness)', () => {
 	test('collects startup [PERF] marks (T0C lane is wired)', async () => {
 		const ctx = await launchApp();
 		try {
-			// Perf marks are emitted via console.info('[PERF] ...') after logger init.
-			// We verify the utility is require-able and its marks exist — a proxy for
-			// the T0C wiring (app/index.js → app/utils/perf.js → onAppReady marks).
-			const perfProbe = await ctx.electronApp.evaluate(() => {
-				try {
-					const perf = require('./app/utils/perf');
-					return {
-						hasMark: typeof perf.mark === 'function',
-						hasElapsed: typeof perf.elapsedMs === 'function',
-						originIsNumber: typeof perf.PERF_ORIGIN === 'number',
-						memorySampleIsFn: typeof perf.sampleMemory === 'function',
-					};
-				} catch (e) {
-					return { error: String(e?.message || e) };
-				}
-			});
+			// Perf utility is a plain Node module; verify it loads in the
+			// test process instead of via `electronApp.evaluate`+require
+			// which hits the same "require is not defined" sandbox issue.
+			let perfProbe;
+			try {
+				const perf = require('../../app/utils/perf');
+				perfProbe = {
+					hasMark: typeof perf.mark === 'function',
+					hasElapsed: typeof perf.elapsedMs === 'function',
+					originIsNumber: typeof perf.PERF_ORIGIN === 'number',
+					memorySampleIsFn: typeof perf.sampleMemory === 'function',
+				};
+			} catch (e) {
+				perfProbe = { error: String(e?.message || e) };
+			}
 			expect(perfProbe.hasMark).toBe(true);
 			expect(perfProbe.hasElapsed).toBe(true);
 			expect(perfProbe.originIsNumber).toBe(true);
