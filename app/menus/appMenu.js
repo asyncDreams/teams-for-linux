@@ -125,6 +125,19 @@ function getPresenceMenu(Menus) {
     || (Menus.configGroup.startupConfig.presence?.keepAlwaysOnline ? "always" : "disabled");
   return [
     {
+      label: "Unified presence sync",
+      type: "checkbox",
+      checked: Menus.configGroup.startupConfig.presence?.sync?.enabled === true,
+      click: () => Menus.togglePresenceSync(),
+    },
+    {
+      label: "Presence Diagnostics",
+      click: () => Menus.openPresenceDiagnostics(),
+    },
+    {
+      type: "separator",
+    },
+    {
       label: "Disabled",
       type: "radio",
       checked: mode === "disabled",

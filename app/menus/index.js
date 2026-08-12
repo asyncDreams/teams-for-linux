@@ -17,6 +17,7 @@ const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
 const NotificationHistoryWindow = require("../notifications/historyWindow");
+const PresenceDiagnosticsWindow = require("../presence/diagnosticsWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
 const AddProfileDialog = require("../profileDialogs/addProfile");
@@ -46,6 +47,7 @@ class Menus {
     this.allowQuit = false;
     this.documentationWindow = new DocumentationWindow();
     this.notificationHistoryWindow = new NotificationHistoryWindow(this.window);
+    this.presenceDiagnosticsWindow = new PresenceDiagnosticsWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
     this.joinMeetingDialog = new JoinMeetingDialog(
       this.window,
@@ -626,6 +628,21 @@ class Menus {
       return;
     }
     this.notificationHistoryWindow.show();
+  }
+
+  openPresenceDiagnostics() {
+    this.presenceDiagnosticsWindow.show();
+  }
+
+  togglePresenceSync() {
+    const presence = this.configGroup.startupConfig.presence || {};
+    presence.sync = {
+      ...(presence.sync || {}),
+      enabled: !(presence.sync?.enabled === true),
+    };
+    this.configGroup.startupConfig.presence = presence;
+    this.configGroup.legacyConfigStore.set('presence', presence);
+    this.updateMenu();
   }
 
   showGpuInfo() {

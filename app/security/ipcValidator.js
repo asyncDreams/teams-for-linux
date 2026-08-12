@@ -50,6 +50,9 @@ const allowedChannels = new Set([
   'set-badge-count',
   'tray-update',
   'dock-icon-update',
+  // Optional unified presence reconciliation and diagnostics
+  'presence-sync-update',
+  'presence-sync-get-diagnostics',
 
   // Call management (sorted alphabetically)
   'call-connected',

@@ -21,6 +21,7 @@ class TrayIconRenderer {
   #lastRequestedCount;
   #updateSequence = 0;
   #lastPresence = 0;
+  #lastPresenceSource = null;
   #lastUnreadCount = 0;
 
   init(config, ipcRenderer) {
@@ -43,15 +44,17 @@ class TrayIconRenderer {
 
   #onPresenceChanged(event) {
     const status = Number(event.detail?.status) || 0;
-    if (status === this.#lastPresence) return;
+    const source = typeof event.detail?.source === 'string' ? event.detail.source : null;
+    if (status === this.#lastPresence && source === this.#lastPresenceSource) return;
     this.#lastPresence = status;
+    this.#lastPresenceSource = source;
     if (!this.config.media?.showStatusOnTrayIcon) return;
     if (this.config.trayIconEnabled === false) return;
-    // Re-render at current unread count with the new presence colour.
-    this.#renderAndSend(this.#lastUnreadCount, status).catch(() => {});
+    // Re-render at current unread count with the new presence colour/source.
+    this.#renderAndSend(this.#lastUnreadCount, status, source).catch(() => {});
   }
 
-  async #renderAndSend(count, presenceStatus) {
+  async #renderAndSend(count, presenceStatus, presenceSource = null) {
     const sequence = ++this.#updateSequence;
     this.#lastRequestedCount = count;
     let icon = null;
@@ -70,6 +73,7 @@ class TrayIconRenderer {
       flash: count > 0 && !this.config.disableNotificationWindowFlash,
       count,
       presence: presenceStatus || 0,
+      presenceSource: presenceSource || null,
     });
   }
 
@@ -77,9 +81,10 @@ class TrayIconRenderer {
     const count = event.detail.number;
     this.#lastUnreadCount = count;
     const presence = this.config.media?.showStatusOnTrayIcon ? this.#lastPresence : 0;
-    // Deduplicate on the tuple (count, presence) — a presence-only change
-    // must still render even when count is unchanged.
-    if (count === this.#lastRequestedCount && presence === (this._lastRenderedPresence || 0)) {
+    const presenceSource = this.config.media?.showStatusOnTrayIcon ? this.#lastPresenceSource : null;
+    // Deduplicate on the tuple (count, presence, source) — a provider-only
+    // change must still render even when the status code is unchanged.
+    if (count === this.#lastRequestedCount && presence === (this._lastRenderedPresence || 0) && presenceSource === (this._lastRenderedPresenceSource || null)) {
       console.debug("[TRAY_DIAG] Activity count unchanged, skipping update");
       return;
     }
@@ -107,11 +112,13 @@ class TrayIconRenderer {
     }
     this.#lastRequestedCount = count;
     this._lastRenderedPresence = presence;
+    this._lastRenderedPresenceSource = presenceSource;
     this.ipcRenderer.send("tray-update", {
       icon,
       flash: count > 0 && !this.config.disableNotificationWindowFlash,
       count,
       presence,
+      presenceSource,
     });
     console.debug("[TRAY_DIAG] Tray update IPC sent", { count, presence, totalTimeMs: Date.now() - startTime });
     if (!this.config.disableBadgeCount) {

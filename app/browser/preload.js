@@ -622,8 +622,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (Object.hasOwn(configChanges, 'presence')) {
         try {
           require("./tools/activityHub").updateKeepOnlineConfig(config);
+          require("./tools/mqttStatusMonitor").updateConfig(config);
         } catch {
-          // Keep-online is optional; a stale Teams reload must not break preload.
+          // Presence enhancements are optional; a stale Teams reload must not break preload.
         }
       }
     });

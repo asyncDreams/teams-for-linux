@@ -119,6 +119,15 @@ let mqttMediaStatusService = null;
 let haDiscovery = null;
 let graphApiClient = null;
 let quickChatManager = null;
+let presenceDiagnostics = {
+  enabled: false,
+  current: null,
+  pending: null,
+  activeProviders: [],
+  lastSyncAt: null,
+  providers: [],
+  lastTransitionAt: null,
+};
 
 const { createPlayer } = require("./audio/player");
 const player = createPlayer();
@@ -285,6 +294,14 @@ if (gotTheLock) {
   ipcMain.handle("user-status-changed", userStatusChangedHandler);
   // Set application badge count (dock/taskbar notification)
   ipcMain.handle("set-badge-count", setBadgeCountHandler);
+
+  // Receive the optional unified presence result from the Teams renderer.
+  // The payload is reduced to status/provider diagnostics before it is retained.
+  ipcMain.on("presence-sync-update", (_event, data) => {
+    presenceDiagnostics = sanitizePresenceDiagnostics(data);
+  });
+  // Return the last unified presence snapshot to the diagnostics window.
+  ipcMain.handle("presence-sync-get-diagnostics", async () => presenceDiagnostics);
 
   // Update Dock icon with status overlay on macOS
   ipcMain.on("dock-icon-update", (_event, dataUrl) => {
@@ -872,6 +889,47 @@ async function requestMediaAccess() {
       `mac permission ${permission} asked current status ${status}`
     );
   }
+}
+
+function sanitizePresenceDiagnostics(data) {
+  const validProviders = new Set(['explicit', 'dom', 'graph', 'calendar', 'meeting', 'presenting']);
+  const validKinds = new Set(['explicit', 'dnd', 'busy', 'meeting', 'calendar', 'presenting', 'available', 'dom', 'graph', 'away', 'brb', 'unknown']);
+  const sanitizeState = (state) => {
+    if (!state || !Number.isInteger(state.status) || state.status < 1 || state.status > 5) return null;
+    return {
+      status: state.status,
+      label: typeof state.label === 'string' ? state.label.slice(0, 64) : null,
+      source: typeof state.source === 'string' ? state.source.slice(0, 64) : null,
+      kind: validKinds.has(state.kind) ? state.kind : 'unknown',
+      provider: validProviders.has(state.provider) ? state.provider : null,
+      updatedAt: Number.isFinite(state.updatedAt) ? state.updatedAt : null,
+    };
+  };
+  const providers = Array.isArray(data?.providers) ? data.providers
+    .filter((provider) => validProviders.has(provider?.name))
+    .map((provider) => ({
+      name: provider.name,
+      active: provider.active === true,
+      status: Number.isInteger(provider.status) && provider.status >= 1 && provider.status <= 5 ? provider.status : null,
+      label: typeof provider.label === 'string' ? provider.label.slice(0, 64) : null,
+      source: typeof provider.source === 'string' ? provider.source.slice(0, 64) : null,
+      kind: validKinds.has(provider.kind) ? provider.kind : null,
+      lastSyncAt: Number.isFinite(provider.lastSyncAt) ? provider.lastSyncAt : null,
+      lastError: typeof provider.lastError === 'string' ? provider.lastError.slice(0, 64) : null,
+      failureCount: Number.isInteger(provider.failureCount) && provider.failureCount >= 0 ? provider.failureCount : 0,
+      retryAt: Number.isFinite(provider.retryAt) ? provider.retryAt : null,
+    })) : [];
+  return {
+    enabled: data?.enabled === true,
+    current: sanitizeState(data?.current),
+    pending: sanitizeState(data?.pending),
+    activeProviders: Array.isArray(data?.activeProviders)
+      ? data.activeProviders.filter((provider) => validProviders.has(provider))
+      : [],
+    lastSyncAt: Number.isFinite(data?.lastSyncAt) ? data.lastSyncAt : null,
+    providers,
+    lastTransitionAt: Number.isFinite(data?.lastTransitionAt) ? data.lastTransitionAt : null,
+  };
 }
 
 async function userStatusChangedHandler(_event, options) {

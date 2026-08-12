@@ -743,6 +743,17 @@ module.exports = {
             enabled: false,
             intervalMs: 60000,
           },
+          sync: {
+            enabled: false,
+            debounceMs: 400,
+            providerTtlMs: 120000,
+            calendar: {
+              enabled: false,
+              preBusy: false,
+              reminderMinutes: 5,
+              pollIntervalMs: 60000,
+            },
+          },
           keepAlwaysOnline: false,
           keepAlwaysOnlineMode: "disabled",
           businessHours: {
@@ -755,7 +766,7 @@ module.exports = {
           smartPresence: false,
         },
         describe:
-          "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). keepAlwaysOnlineMode: disabled, always, or business-hours; disabled by default. businessHours: local schedule used by business-hours mode, with ISO weekday numbers 1 (Monday) through 7 (Sunday), a configured IANA timezone, and support for overnight windows. smartPresence: when true, keep-online nudges yield to meetings, calls, presenting, DND, and explicit Busy. The legacy keepAlwaysOnline boolean remains supported as an alias for always.",
+          "Presence sync configuration. sync.enabled: opt-in reconciliation of Teams DOM, Graph, meeting, presentation, and optional calendar signals; disabled by default. sync.debounceMs: suppress short-lived conflicting transitions. sync.providerTtlMs: how long a provider result remains usable. sync.calendar.enabled: optionally poll Graph calendar; sync.calendar.preBusy: optionally derive Busy shortly before an event; sync.calendar.reminderMinutes: pre-busy lead time. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). keepAlwaysOnlineMode: disabled, always, or business-hours; disabled by default. businessHours: local schedule used by business-hours mode, with ISO weekday numbers 1 (Monday) through 7 (Sunday), a configured IANA timezone, and support for overnight windows. smartPresence: when true, keep-online nudges yield to meetings, calls, presenting, DND, and explicit Busy. The legacy keepAlwaysOnline boolean remains supported as an alias for always.",
         type: "object",
         fields: {
           "graphPoll.enabled": {
@@ -767,6 +778,41 @@ module.exports = {
             type: "number",
             describe:
               "Poll interval in milliseconds for Microsoft Graph /me/presence when graphPoll is enabled.",
+          },
+          "sync.enabled": {
+            type: "boolean",
+            describe:
+              "Enable the unified presence reconciliation layer. Off by default; DOM and Graph behavior remains unchanged when disabled.",
+          },
+          "sync.debounceMs": {
+            type: "number",
+            describe:
+              "Debounce conflicting provider transitions in milliseconds.",
+          },
+          "sync.providerTtlMs": {
+            type: "number",
+            describe:
+              "How long a provider result remains active before it expires.",
+          },
+          "sync.calendar.enabled": {
+            type: "boolean",
+            describe:
+              "Poll the Microsoft Graph calendar as an optional presence provider; requires Graph API access.",
+          },
+          "sync.calendar.preBusy": {
+            type: "boolean",
+            describe:
+              "Derive Busy shortly before an upcoming calendar event.",
+          },
+          "sync.calendar.reminderMinutes": {
+            type: "number",
+            describe:
+              "Minutes before a calendar event when the optional pre-busy state starts.",
+          },
+          "sync.calendar.pollIntervalMs": {
+            type: "number",
+            describe:
+              "Calendar provider poll interval in milliseconds.",
           },
           "keepAlwaysOnline": {
             type: "boolean",
