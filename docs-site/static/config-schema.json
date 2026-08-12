@@ -1404,9 +1404,11 @@
       "default": {
         "enabled": false,
         "allowUnpacked": true,
+        "allowCrx": true,
+        "developerMode": false,
         "preload": []
       },
-      "description": "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Requires restart.",
+      "description": "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. allowCrx: offer CRX installation after validation. developerMode: show advanced manifest and developer actions in the manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Installed CRX files are copied under <userData>/extensions and restored after restart. Requires restart for preload changes.",
       "applyMode": "restart",
       "fields": [
         {
@@ -1420,6 +1422,18 @@
           "type": "boolean",
           "default": true,
           "description": "Allow loading unpacked extensions via the Extensions manager."
+        },
+        {
+          "path": "allowCrx",
+          "type": "boolean",
+          "default": true,
+          "description": "Allow validated CRX/ZIP installation via the Extensions manager."
+        },
+        {
+          "path": "developerMode",
+          "type": "boolean",
+          "default": false,
+          "description": "Show advanced extension manifest and developer actions in the manager."
         },
         {
           "path": "preload",

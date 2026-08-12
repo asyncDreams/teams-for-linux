@@ -1,132 +1,557 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, dialog, ipcMain, session } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  session,
+  shell,
+} = require('electron');
+const {
+  extractCrx,
+  readManifest,
+  validateManifest,
+} = require('./crx');
+
+const METADATA_VERSION = 1;
+const MAX_RECORDS = 100;
+const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 
 /**
- * Chromimum extension manager — unpacked only (MVP).
- * Loads extensions listed in config.extensions.preload at startup and
- * exposes IPC for the Extensions manager window.
- * Off by default (extensions.enabled === false) — no session touch.
+ * Manages optional Chromium extensions for the single Teams profile.
+ *
+ * Extensions remain opt-in: no session is touched unless extensions.enabled is
+ * true. CRX archives are validated and extracted into userData/extensions;
+ * unpacked directories are validated in place and their absolute paths are
+ * persisted so they can be restored after a restart.
  */
 class ExtensionManager {
   #config;
   #settingsStore;
-  #loaded = new Map(); // id -> { id, name, version, path, enabled }
+  #loaded = new Map();
+  #session = null;
+  #extensionRoot;
+  #metadataPath;
+  #managerWindow = null;
+  #registered = false;
 
   constructor(config, settingsStore) {
-    this.config = config;
-    this.settingsStore = settingsStore;
+    this.#config = config;
+    this.#settingsStore = settingsStore;
+    this.#extensionRoot = path.join(app.getPath('userData'), 'extensions');
+    this.#metadataPath = path.join(this.#extensionRoot, 'metadata.json');
   }
 
   async initialize() {
-    const enabled = this.config?.extensions?.enabled;
-    if (!enabled) {
+    fs.mkdirSync(this.#extensionRoot, { recursive: true, mode: 0o700 });
+    this.#loadPersistedRecords();
+    this.#registerIpc();
+
+    if (this.#config?.extensions?.enabled !== true) {
       console.info('[Extensions] Disabled (extensions.enabled=false)');
-      this._registerIpc();
       return;
     }
-    const partition = this.config?.partition || 'persist:teams-4-linux';
-    const sess = session.fromPartition(partition);
-    const preload = Array.isArray(this.config?.extensions?.preload) ? this.config.extensions.preload : [];
-    for (const p of preload) {
+
+    this.#session = this.#getSession();
+    const preload = Array.isArray(this.#config.extensions.preload)
+      ? this.#config.extensions.preload
+      : [];
+    for (const extensionPath of preload) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        await this._loadUnpacked(sess, p, true);
-      } catch (e) {
-        console.warn('[Extensions] Preload failed', { pathBasename: path.basename(p), message: e.message });
+        await this.#loadUnpacked(extensionPath, 'preload');
+      } catch (error) {
+        console.warn('[Extensions] Preload failed', {
+          pathBasename: path.basename(String(extensionPath)),
+          message: error.message,
+        });
       }
     }
-    this._registerIpc();
+
+    for (const record of Array.from(this.#loaded.values())) {
+      if (!record.enabled || !record.path || this.#hasLoadedPath(record.path)) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#loadPersistedRecord(record);
+      } catch (error) {
+        record.lastError = error.message;
+        this.#loaded.set(record.id, record);
+        console.warn('[Extensions] Restore failed', {
+          id: record.id,
+          message: error.message,
+        });
+      }
+    }
+    this.#persist();
     console.info('[Extensions] Initialized', { count: this.#loaded.size });
   }
 
-  _registerIpc() {
+  #registerIpc() {
+    if (this.#registered) return;
+    this.#registered = true;
+
+    // Extension manager list/read operations are intentionally limited to metadata.
     ipcMain.handle('extension-list', async () => this.list());
+    ipcMain.handle('extension-details', async (_event, payload) => this.details(payload?.id));
     ipcMain.handle('extension-load-unpacked', async (_event, payload) => {
-      if (!this.config?.extensions?.allowUnpacked) throw new Error('Unpacked extensions disabled by config');
-      const dir = payload?.path;
-      if (typeof dir !== 'string' || !path.isAbsolute(dir)) throw new Error('Path must be absolute');
-      const partition = this.config?.partition || 'persist:teams-4-linux';
-      const sess = session.fromPartition(partition);
-      const ext = await this._loadUnpacked(sess, dir, false);
-      return { id: ext.id, name: ext.name, version: ext.version };
+      this.#assertEnabled();
+      if (this.#config.extensions.allowUnpacked !== true) {
+        throw new Error('Unpacked extensions are disabled by config');
+      }
+      return this.#loadUnpacked(payload?.path, 'unpacked');
+    });
+    ipcMain.handle('extension-install-crx', async (_event, payload) => {
+      this.#assertEnabled();
+      if (this.#config.extensions.allowCrx !== true) {
+        throw new Error('CRX installation is disabled by config');
+      }
+      return this.#installCrx(payload?.path);
+    });
+    ipcMain.handle('extension-pick-unpacked', async () => {
+      this.#assertEnabled();
+      return this.#pickUnpacked();
+    });
+    ipcMain.handle('extension-pick-crx', async () => {
+      this.#assertEnabled();
+      return this.#pickCrx();
     });
     ipcMain.handle('extension-remove', async (_event, payload) => {
-      const id = payload?.id;
-      if (typeof id !== 'string' || !id) throw new Error('Invalid id');
-      const partition = this.config?.partition || 'persist:teams-4-linux';
-      const sess = session.fromPartition(partition);
-      try { sess.removeExtension(id); } catch {}
-      this.#loaded.delete(id);
-      this._persist();
-      return { ok: true };
+      this.#assertEnabled();
+      return this.remove(payload?.id);
     });
     ipcMain.handle('extension-set-enabled', async (_event, payload) => {
-      const { id, enabled } = payload || {};
-      if (typeof id !== 'string' || !id) throw new Error('Invalid id');
-      const entry = this.#loaded.get(id);
-      if (!entry) throw new Error('Unknown extension');
-      entry.enabled = !!enabled;
-      const partition = this.config?.partition || 'persist:teams-4-linux';
-      const sess = session.fromPartition(partition);
-      if (!enabled) {
-        try { sess.removeExtension(id); } catch {}
-      } else {
-        try { await sess.loadExtension(entry.path); } catch (e) { throw new Error(e.message); }
-      }
-      this._persist();
+      this.#assertEnabled();
+      return this.setEnabled(payload?.id, payload?.enabled);
+    });
+    ipcMain.handle('extension-reload', async (_event, payload) => {
+      this.#assertEnabled();
+      return this.reload(payload?.id);
+    });
+    ipcMain.handle('extension-open-folder', async (_event, payload) => {
+      this.#assertEnabled();
+      const record = this.#getRecord(payload?.id);
+      await shell.openPath(record.path);
       return { ok: true };
     });
-    ipcMain.on('extension-open-manager', () => this.openManagerWindow());
+    ipcMain.handle('extension-export-metadata', async (_event, payload) => {
+      this.#assertEnabled();
+      return this.#exportMetadata(payload?.id);
+    });
+
+    // Menu events are main-process only; they do not expose paths or data to the
+    // Teams renderer and therefore do not use renderer IPC validation.
+    app.on('extension-open-manager', () => this.openManagerWindow());
+    app.on('extension-install-crx', () => this.#pickCrx().catch((error) => this.#showError(error)));
+    app.on('extension-load-unpacked', () => this.#pickUnpacked().catch((error) => this.#showError(error)));
   }
 
-  async _loadUnpacked(sess, dir, isPreload) {
-    const resolved = path.resolve(dir);
-    if (!fs.existsSync(resolved)) throw new Error('Directory does not exist');
-    const stat = fs.statSync(resolved);
-    if (!stat.isDirectory()) throw new Error('Path is not a directory');
-    const manifestPath = path.join(resolved, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) throw new Error('manifest.json missing');
-    const raw = fs.readFileSync(manifestPath, 'utf8').slice(0, 256 * 1024);
-    let manifest;
-    try { manifest = JSON.parse(raw); } catch { throw new Error('Invalid manifest.json'); }
-    const mv = manifest.manifest_version;
-    if (mv !== 2 && mv !== 3) throw new Error('Unsupported manifest_version');
-    // Security: ensure dir is under userData/extensions or user-picked allow-list (preload already trusted)
-    if (!isPreload) {
-      const allowedRoots = [path.join(app.getPath('userData'), 'extensions'), app.getPath('downloads'), app.getPath('home') + path.sep];
-      // For MVP allow any absolute dir the user picked via dialog; still reject traversal via .. in manifest paths is not needed here
+  #assertEnabled() {
+    if (this.#config?.extensions?.enabled !== true) {
+      throw new Error('Chromium extensions are disabled by config');
     }
-    const ext = await sess.loadExtension(resolved, { allowFileAccess: true });
-    const name = manifest.name || ext.name || path.basename(resolved);
-    const version = manifest.version || ext.version || '0';
-    this.#loaded.set(ext.id, { id: ext.id, name: String(name).slice(0,200), version: String(version).slice(0,50), path: resolved, enabled: true });
-    if (!isPreload) this._persist();
-    console.info('[Extensions] Loaded', { id: ext.id, name });
-    return ext;
+  }
+
+  #getSession() {
+    if (!this.#session) {
+      const partition = this.#config?.partition || 'persist:teams-4-linux';
+      this.#session = session.fromPartition(partition);
+    }
+    return this.#session;
+  }
+
+  #validatePath(value, label = 'Path') {
+    if (typeof value !== 'string' || !path.isAbsolute(value)) {
+      throw new Error(`${label} must be an absolute path`);
+    }
+    return path.resolve(value);
+  }
+
+  #loadPersistedRecords() {
+    let records = [];
+    try {
+      if (fs.existsSync(this.#metadataPath)) {
+        const parsed = JSON.parse(fs.readFileSync(this.#metadataPath, 'utf8'));
+        records = Array.isArray(parsed) ? parsed : parsed?.extensions;
+      }
+    } catch {
+      console.warn('[Extensions] Metadata could not be read; starting with an empty registry');
+    }
+    if (!Array.isArray(records)) {
+      try {
+        const legacy = this.#settingsStore?.get('extensions.installed', []);
+        records = Array.isArray(legacy) ? legacy : [];
+      } catch {
+        records = [];
+      }
+    }
+    for (const record of records.slice(0, MAX_RECORDS)) {
+      const normalized = normalizeRecord(record);
+      if (normalized) this.#loaded.set(normalized.id, normalized);
+    }
+  }
+
+  async #loadPersistedRecord(record) {
+    const manifest = readManifest(record.path);
+    const extension = await this.#getSession().loadExtension(record.path, { allowFileAccess: true });
+    const next = makeRecord(extension, manifest, record.path, record.source, record);
+    next.enabled = record.enabled !== false;
+    next.loaded = true;
+    this.#replaceRecord(record.id, next);
+    return this.#publicRecord(next);
+  }
+
+  async #loadUnpacked(inputPath, source) {
+    const resolved = this.#validatePath(inputPath, 'Extension directory');
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+      throw new Error('Extension directory does not exist');
+    }
+    const manifest = readManifest(resolved);
+    const existing = this.#findByPath(resolved);
+    if (existing) {
+      if (!existing.loaded) return this.setEnabled(existing.id, true);
+      return this.#publicRecord(existing);
+    }
+    const extension = await this.#getSession().loadExtension(resolved, { allowFileAccess: true });
+    const record = makeRecord(extension, manifest, resolved, source);
+    record.loaded = true;
+    this.#loaded.set(record.id, record);
+    this.#persist();
+    return this.#publicRecord(record);
+  }
+
+  async #installCrx(inputPath) {
+    const resolved = this.#validatePath(inputPath, 'CRX file');
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('CRX file does not exist');
+    const sourceHash = hashFile(resolved);
+    const existing = Array.from(this.#loaded.values()).find((entry) => entry.sourceHash === sourceHash);
+    if (existing) return { ...this.#publicRecord(existing), duplicate: true };
+
+    const temporaryRoot = path.join(
+      this.#extensionRoot,
+      `.tmp-${process.pid}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`,
+    );
+    let temporaryExtensionPath;
+    let temporaryId;
+    try {
+      const extracted = extractCrx(resolved, temporaryRoot);
+      temporaryExtensionPath = extracted.extensionPath;
+      const temporaryExtension = await this.#getSession().loadExtension(temporaryExtensionPath, { allowFileAccess: true });
+      temporaryId = temporaryExtension.id;
+      try { this.#getSession().removeExtension(temporaryId); } catch { /* already unloaded */ }
+
+      if (!EXTENSION_ID_PATTERN.test(temporaryId)) throw new Error('Electron returned an invalid extension id');
+      const finalPath = path.join(this.#extensionRoot, temporaryId);
+      if (fs.existsSync(finalPath)) {
+        throw new Error('An extension with this id is already installed');
+      }
+      fs.renameSync(temporaryExtensionPath, finalPath);
+      temporaryExtensionPath = null;
+      const extension = await this.#getSession().loadExtension(finalPath, { allowFileAccess: true });
+      const record = makeRecord(extension, extracted.manifest, finalPath, 'crx');
+      record.loaded = true;
+      record.sourceHash = sourceHash;
+      record.sourceFileName = path.basename(resolved);
+      this.#loaded.set(record.id, record);
+      this.#persist();
+      return this.#publicRecord(record);
+    } finally {
+      if (temporaryId) {
+        try { this.#getSession().removeExtension(temporaryId); } catch { /* best effort cleanup */ }
+      }
+      if (fs.existsSync(temporaryRoot)) fs.rmSync(temporaryRoot, { recursive: true, force: true });
+      if (temporaryExtensionPath && fs.existsSync(temporaryExtensionPath)) {
+        fs.rmSync(temporaryExtensionPath, { recursive: true, force: true });
+      }
+    }
+  }
+
+  async #pickCrx() {
+    const result = await dialog.showOpenDialog(this.#managerWindow && !this.#managerWindow.isDestroyed() ? this.#managerWindow : undefined, {
+      title: 'Install Chromium extension',
+      properties: ['openFile'],
+      filters: [{ name: 'Chrome extension', extensions: ['crx'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return this.#installCrx(result.filePaths[0]);
+  }
+
+  async #pickUnpacked() {
+    const result = await dialog.showOpenDialog(this.#managerWindow && !this.#managerWindow.isDestroyed() ? this.#managerWindow : undefined, {
+      title: 'Load unpacked extension',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return this.#loadUnpacked(result.filePaths[0], 'unpacked');
+  }
+
+  async remove(id) {
+    const record = this.#getRecord(id);
+    try { this.#getSession().removeExtension(record.id); } catch { /* disabled or already unloaded */ }
+    this.#loaded.delete(record.id);
+    if (record.source === 'crx' && isWithin(this.#extensionRoot, record.path)) {
+      fs.rmSync(record.path, { recursive: true, force: true });
+    }
+    this.#persist();
+    return { ok: true };
+  }
+
+  async setEnabled(id, enabled) {
+    const record = this.#getRecord(id);
+    const nextEnabled = enabled === true;
+    if (!nextEnabled) {
+      try { this.#getSession().removeExtension(record.id); } catch { /* already disabled */ }
+      record.enabled = false;
+      record.loaded = false;
+      this.#loaded.set(record.id, record);
+      this.#persist();
+      return this.#publicRecord(record);
+    }
+    if (!fs.existsSync(record.path)) throw new Error('Extension path no longer exists');
+    const manifest = readManifest(record.path);
+    const extension = await this.#getSession().loadExtension(record.path, { allowFileAccess: true });
+    const replacement = makeRecord(extension, manifest, record.path, record.source, record);
+    replacement.enabled = true;
+    replacement.loaded = true;
+    this.#replaceRecord(record.id, replacement);
+    this.#persist();
+    return this.#publicRecord(replacement);
+  }
+
+  async reload(id) {
+    const record = this.#getRecord(id);
+    try { this.#getSession().removeExtension(record.id); } catch { /* best effort */ }
+    const manifest = readManifest(record.path);
+    const extension = await this.#getSession().loadExtension(record.path, { allowFileAccess: true });
+    const replacement = makeRecord(extension, manifest, record.path, record.source, record);
+    replacement.enabled = true;
+    replacement.loaded = true;
+    this.#replaceRecord(record.id, replacement);
+    this.#persist();
+    return this.#publicRecord(replacement);
   }
 
   list() {
-    return Array.from(this.#loaded.values()).map(e => ({ id: e.id, name: e.name, version: e.version, enabled: e.enabled, pathBasename: path.basename(e.path) }));
+    return Array.from(this.#loaded.values()).map((record) => this.#publicRecord(record));
   }
 
-  _persist() {
+  details(id) {
+    return this.#publicRecord(this.#getRecord(id), true);
+  }
+
+  async #exportMetadata(id) {
+    const record = this.#getRecord(id);
+    const result = await dialog.showSaveDialog(this.#managerWindow && !this.#managerWindow.isDestroyed() ? this.#managerWindow : undefined, {
+      title: 'Export extension metadata',
+      defaultPath: path.join(app.getPath('downloads'), `${safeFileName(record.name)}-metadata.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    fs.writeFileSync(result.filePath, `${JSON.stringify(this.#publicRecord(record, true), null, 2)}\n`, { mode: 0o600 });
+    return { canceled: false, path: result.filePath };
+  }
+
+  #getRecord(id) {
+    if (typeof id !== 'string' || !id) throw new Error('Invalid extension id');
+    const record = this.#loaded.get(id);
+    if (!record) throw new Error('Unknown extension');
+    return record;
+  }
+
+  #findByPath(extensionPath) {
+    return Array.from(this.#loaded.values()).find((record) => record.path === extensionPath);
+  }
+
+  #hasLoadedPath(extensionPath) {
+    return Boolean(this.#findByPath(extensionPath)?.loaded);
+  }
+
+  #replaceRecord(previousId, next) {
+    if (previousId !== next.id) this.#loaded.delete(previousId);
+    this.#loaded.set(next.id, next);
+  }
+
+  #persist() {
+    const records = Array.from(this.#loaded.values()).slice(0, MAX_RECORDS);
     try {
-      const key = 'extensions.loaded';
-      this.settingsStore.set(key, Array.from(this.#loaded.values()));
-    } catch {}
+      const temporary = `${this.#metadataPath}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify({ version: METADATA_VERSION, extensions: records }, null, 2), { mode: 0o600 });
+      fs.renameSync(temporary, this.#metadataPath);
+      this.#settingsStore?.set('extensions.installed', records);
+    } catch (error) {
+      console.warn('[Extensions] Metadata persistence failed', { message: error.message });
+    }
+  }
+
+  #publicRecord(record, includeManifest = false) {
+    const result = {
+      id: record.id,
+      name: record.name,
+      version: record.version,
+      description: record.description,
+      enabled: record.enabled === true,
+      source: record.source,
+      path: record.path,
+      pathBasename: path.basename(record.path),
+      installDate: record.installDate,
+      sizeBytes: record.sizeBytes,
+      iconPath: record.iconPath,
+      permissions: record.permissions,
+      hostPermissions: record.hostPermissions,
+      manifestVersion: record.manifestVersion,
+      sourceFileName: record.sourceFileName,
+      lastError: record.lastError || null,
+    };
+    if (includeManifest) result.manifest = record.manifest;
+    return result;
   }
 
   openManagerWindow() {
-    const { BrowserWindow } = require('electron');
-    const win = new BrowserWindow({
-      width: 560, height: 420, show: true, autoHideMenuBar: true,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, 'managerPreload.js') }
+    if (this.#managerWindow && !this.#managerWindow.isDestroyed()) {
+      this.#managerWindow.show();
+      this.#managerWindow.focus();
+      return;
+    }
+    this.#managerWindow = new BrowserWindow({
+      width: 820,
+      height: 620,
+      minWidth: 620,
+      minHeight: 460,
+      show: false,
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'managerPreload.js'),
+      },
     });
-    win.loadFile(path.join(__dirname, 'manager.html'));
+    this.#managerWindow.once('ready-to-show', () => this.#managerWindow?.show());
+    this.#managerWindow.on('closed', () => { this.#managerWindow = null; });
+    this.#managerWindow.loadFile(path.join(__dirname, 'manager.html'));
   }
+
+  #showError(error) {
+    dialog.showErrorBox('Extension installation failed', error?.message || 'Unable to install the extension');
+  }
+}
+
+function normalizeRecord(record) {
+  if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !EXTENSION_ID_PATTERN.test(record.id)) return null;
+  if (typeof record.path !== 'string' || !path.isAbsolute(record.path)) return null;
+  return {
+    id: record.id,
+    name: typeof record.name === 'string' ? record.name.slice(0, 200) : 'Extension',
+    version: typeof record.version === 'string' ? record.version.slice(0, 128) : '0',
+    description: typeof record.description === 'string' ? record.description.slice(0, 1000) : '',
+    enabled: record.enabled !== false,
+    loaded: false,
+    source: record.source === 'crx' ? 'crx' : 'unpacked',
+    path: path.resolve(record.path),
+    installDate: Number.isFinite(record.installDate) ? record.installDate : Date.now(),
+    sizeBytes: Number.isFinite(record.sizeBytes) ? record.sizeBytes : 0,
+    iconPath: typeof record.iconPath === 'string' ? record.iconPath.slice(0, 512) : null,
+    permissions: stringArray(record.permissions),
+    hostPermissions: stringArray(record.hostPermissions),
+    manifestVersion: record.manifestVersion === 2 ? 2 : 3,
+    sourceHash: typeof record.sourceHash === 'string' ? record.sourceHash : null,
+    sourceFileName: typeof record.sourceFileName === 'string' ? record.sourceFileName.slice(0, 255) : null,
+    manifest: sanitizeManifest(record.manifest),
+    lastError: null,
+  };
+}
+
+function makeRecord(extension, manifest, extensionPath, source, previous = null) {
+  validateManifest(manifest);
+  return {
+    id: extension.id,
+    name: String(manifest.name || extension.name || path.basename(extensionPath)).slice(0, 200),
+    version: String(manifest.version || extension.version || '0').slice(0, 128),
+    description: typeof manifest.description === 'string' ? manifest.description.slice(0, 1000) : '',
+    enabled: true,
+    loaded: false,
+    source: source === 'crx' ? 'crx' : 'unpacked',
+    path: path.resolve(extensionPath),
+    installDate: previous?.installDate || Date.now(),
+    sizeBytes: directorySize(extensionPath),
+    iconPath: getIconPath(manifest, extensionPath),
+    permissions: stringArray(manifest.permissions),
+    hostPermissions: stringArray([...(manifest.host_permissions || []), ...(manifest.permissions || []).filter((value) => value.includes('://'))]),
+    manifestVersion: manifest.manifest_version,
+    sourceHash: previous?.sourceHash || null,
+    sourceFileName: previous?.sourceFileName || null,
+    manifest: sanitizeManifest(manifest),
+    lastError: null,
+  };
+}
+
+function sanitizeManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object') return {};
+  return {
+    manifest_version: manifest.manifest_version,
+    name: String(manifest.name || '').slice(0, 200),
+    version: String(manifest.version || '').slice(0, 128),
+    description: typeof manifest.description === 'string' ? manifest.description.slice(0, 1000) : '',
+    permissions: stringArray(manifest.permissions),
+    host_permissions: stringArray(manifest.host_permissions),
+    optional_permissions: stringArray(manifest.optional_permissions),
+    content_scripts: Array.isArray(manifest.content_scripts) ? manifest.content_scripts.slice(0, 100).map((script) => ({
+      matches: stringArray(script?.matches),
+      js: stringArray(script?.js),
+      css: stringArray(script?.css),
+      run_at: typeof script?.run_at === 'string' ? script.run_at : null,
+    })) : [],
+    background: manifest.background && typeof manifest.background === 'object' ? {
+      service_worker: typeof manifest.background.service_worker === 'string' ? manifest.background.service_worker : null,
+      scripts: stringArray(manifest.background.scripts),
+    } : null,
+    icons: manifest.icons && typeof manifest.icons === 'object' ? Object.fromEntries(Object.entries(manifest.icons).slice(0, 20).map(([size, value]) => [String(size), String(value).slice(0, 512)])) : {},
+  };
+}
+
+function getIconPath(manifest, extensionPath) {
+  const icons = manifest.icons;
+  if (!icons || typeof icons !== 'object') return null;
+  const relative = icons['128'] || icons['48'] || icons['32'] || Object.values(icons)[0];
+  if (typeof relative !== 'string') return null;
+  const candidate = path.resolve(extensionPath, relative);
+  return isWithin(extensionPath, candidate) && fs.existsSync(candidate) ? candidate : null;
+}
+
+function stringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, 100).map((item) => item.slice(0, 512)) : [];
+}
+
+function directorySize(root) {
+  let total = 0;
+  const visit = (entry) => {
+    if (total > 250 * 1024 * 1024) return;
+    let stat;
+    try { stat = fs.lstatSync(entry); } catch { return; }
+    if (stat.isDirectory()) {
+      for (const child of fs.readdirSync(entry)) visit(path.join(entry, child));
+    } else if (stat.isFile()) {
+      total += stat.size;
+    }
+  };
+  visit(root);
+  return total;
+}
+
+function hashFile(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function isWithin(root, candidate) {
+  const resolvedRoot = path.resolve(root) + path.sep;
+  const resolvedCandidate = path.resolve(candidate);
+  return resolvedCandidate.startsWith(resolvedRoot);
+}
+
+function safeFileName(value) {
+  return String(value || 'extension').replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'extension';
 }
 
 module.exports = ExtensionManager;

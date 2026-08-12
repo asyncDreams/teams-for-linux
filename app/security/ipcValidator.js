@@ -167,11 +167,18 @@ const allowedChannels = new Set([
   'profile-switcher-open-manage',
   'profile-switcher-set-expanded',
   'profile-switcher-state',
-  // Chromium extensions (unpacked, off by default)
+  // Chromium extensions (off by default)
   'extension-list',
+  'extension-details',
   'extension-load-unpacked',
+  'extension-install-crx',
+  'extension-pick-unpacked',
+  'extension-pick-crx',
   'extension-remove',
   'extension-set-enabled',
+  'extension-reload',
+  'extension-open-folder',
+  'extension-export-metadata',
   'extension-open-manager',
   'notification-toast-action',
 

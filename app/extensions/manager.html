@@ -1,45 +1,58 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Extensions</title>
 <style>
-*{box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;margin:16px;color:#222}
-h1{font-size:16px;margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:13px}
-button{padding:6px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
-button.primary{background:#5B5BD6;color:#fff;border-color:#5B5BD6}
-.muted{color:#666;font-size:12px}
-.row{display:flex;gap:8px;align-items:center;margin:8px 0}
-input[type=text]{flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:4px}
+:root{font-family:"Segoe UI",system-ui,sans-serif;color:#242424;background:#f7f7fb;--accent:#5b5bd6;--border:#dedee8;--muted:#61616e}
+*{box-sizing:border-box}body{margin:0;padding:24px;min-width:560px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+h1{font-size:24px;letter-spacing:-.02em;margin:0}.eyebrow{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}button{border:1px solid var(--border);border-radius:7px;background:#fff;color:inherit;cursor:pointer;padding:8px 12px;font:inherit;font-size:13px}button:hover{border-color:var(--accent);box-shadow:0 2px 8px #36365c18}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:#a52b3b}.muted{color:var(--muted);font-size:12px}.notice{background:#eeefff;border:1px solid #d9d9ff;border-radius:10px;color:#39396f;padding:10px 12px;margin:0 0 16px;line-height:1.4}
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px}.toolbar input{flex:1;border:1px solid var(--border);border-radius:7px;background:#fff;padding:9px 11px;font:inherit;color:inherit}.count{font-size:12px;color:var(--muted);white-space:nowrap}
+.grid{display:grid;gap:10px}.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 3px 14px #36365c0d}.card-top{display:flex;gap:12px;align-items:flex-start}.icon{height:42px;width:42px;flex:0 0 42px;border-radius:10px;background:linear-gradient(135deg,#5b5bd6,#3b82d0);display:grid;place-items:center;color:#fff;font-weight:700;font-size:19px;overflow:hidden}.icon img{height:100%;width:100%;object-fit:cover}.name{font-weight:650;font-size:15px}.meta{font-size:12px;color:var(--muted);margin-top:3px}.badge{display:inline-block;border-radius:999px;background:#e9e9f9;color:#4b4b9d;font-size:11px;padding:2px 7px;margin-left:5px}.disabled{opacity:.58}.card-actions{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0 54px}.card-actions button{padding:6px 9px;font-size:12px}.details{border-top:1px solid #ededf2;margin:12px 0 0 54px;padding-top:10px;display:none}.details.open{display:block}.details pre{white-space:pre-wrap;word-break:break-word;background:#f4f4f8;border-radius:7px;padding:9px;font-size:11px;max-height:180px;overflow:auto}.empty{text-align:center;border:1px dashed #cacaD8;border-radius:12px;color:var(--muted);padding:36px 20px}.status{min-height:18px;margin:8px 0;color:#a52b3b;font-size:12px}
+@media(prefers-color-scheme:dark){:root{color:#eee;background:#1d1d25;--border:#3a3a48;--muted:#b4b4c2}.card,button,.toolbar input{background:#292934;color:#eee}.notice{background:#2d2d50;color:#e3e3ff}.details pre{background:#20202a}}
 </style>
 </head>
 <body>
-<h1>Extensions</h1>
-<p class="muted">Load unpacked Chromium extensions (e.g. Otter.ai). Requires restart to apply preload paths set in config. Paths in <code>extensions.preload</code> are loaded at startup when <code>extensions.enabled</code> is true.</p>
-<div class="row">
-  <input id="path" type="text" placeholder="/absolute/path/to/unpacked-extension">
-  <button id="load" class="primary">Load unpacked</button>
-</div>
-<div id="status" class="muted"></div>
-<table><thead><tr><th>Name</th><th>Version</th><th>Enabled</th><th></th></tr></thead><tbody id="tbody"></tbody></table>
+<header><div><div class="eyebrow">Teams for Linux</div><h1>Extensions</h1></div><div class="actions"><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
+<div class="notice">Extensions are optional and disabled by default. CRX files are validated before being copied to your local profile. Otter.ai can be installed here if its downloaded extension is supplied as a CRX or unpacked folder.</div>
+<div class="toolbar"><input id="search" type="search" placeholder="Search installed extensions" autocomplete="off"><span id="count" class="count"></span></div>
+<div id="status" class="status" role="status" aria-live="polite"></div><main id="extensions" class="grid"></main>
 <script>
-async function refresh(){
-  const list = await window.extensionsApi.list();
-  const tb=document.getElementById('tbody'); tb.innerHTML='';
-  list.forEach(e=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${e.name}</td><td>${e.version}</td><td><input type="checkbox" ${e.enabled?'checked':''} data-id="${e.id}" class="en"></td><td><button data-id="${e.id}" class="rm">Remove</button></td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('.en').forEach(cb=>cb.addEventListener('change',async()=>{await window.extensionsApi.setEnabled(cb.dataset.id, cb.checked);}));
-  tb.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',async()=>{await window.extensionsApi.remove(b.dataset.id); refresh();}));
+const state={items:[],query:""};
+const byId=(id)=>document.getElementById(id);
+function setStatus(message){byId("status").textContent=message||"";}
+function text(value){return value==null?"":String(value);}
+function render(){
+  const root=byId("extensions"); root.textContent="";
+  const items=state.items.filter((item)=>[item.name,item.version,item.source,item.description].join(" ").toLowerCase().includes(state.query.toLowerCase()));
+  byId("count").textContent=`${items.length} installed`;
+  if(!items.length){const empty=document.createElement("div");empty.className="empty";empty.textContent=state.items.length?"No matching extensions.":"No extensions installed yet.";root.appendChild(empty);return;}
+  for(const item of items) root.appendChild(card(item));
 }
-document.getElementById('load').addEventListener('click', async()=>{
-  const p=document.getElementById('path').value.trim();
-  if(!p){document.getElementById('status').textContent='Enter an absolute path.';return;}
-  try{await window.extensionsApi.loadUnpacked(p); document.getElementById('status').textContent='Loaded. Restart may be needed for some extensions.'; refresh();}catch(e){document.getElementById('status').textContent=e.message||String(e);}
-});
-refresh();
+function card(item){
+  const card=document.createElement("section");card.className=`card ${item.enabled?"":"disabled"}`;
+  const top=document.createElement("div");top.className="card-top";
+  const icon=document.createElement("div");icon.className="icon";icon.textContent=(item.name||"E").slice(0,1).toUpperCase();
+  if(item.iconPath){const image=document.createElement("img");image.src=`file://${item.iconPath}`;image.alt="";image.onerror=()=>image.remove();icon.textContent="";icon.appendChild(image);}
+  const info=document.createElement("div");info.style.flex="1";const name=document.createElement("div");name.className="name";name.textContent=item.name||"Extension";
+  const badge=document.createElement("span");badge.className="badge";badge.textContent=item.enabled?"Enabled":"Disabled";name.appendChild(badge);
+  const meta=document.createElement("div");meta.className="meta";meta.textContent=`Version ${item.version||"?"} · ${item.source||"unpacked"}`;info.append(name,meta);top.append(icon,info);
+  const toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=item.enabled;toggle.title="Enable extension";toggle.addEventListener("change",()=>run(()=>window.extensionsApi.setEnabled(item.id,toggle.checked)).then(refresh).catch(()=>{toggle.checked=!toggle.checked;}));top.append(toggle);card.appendChild(top);
+  const actions=document.createElement("div");actions.className="card-actions";
+  for(const [label,handler] of [["Details",()=>toggleDetails(card,item.id)],["Reload",()=>run(()=>window.extensionsApi.reload(item.id)).then(refresh)], ["Open folder",()=>run(()=>window.extensionsApi.openFolder(item.id))],["Export metadata",()=>run(()=>window.extensionsApi.exportMetadata(item.id))]]){const button=document.createElement("button");button.textContent=label;button.addEventListener("click",()=>handler().catch((error)=>setStatus(error.message||String(error))));actions.appendChild(button);}
+  const remove=document.createElement("button");remove.className="danger";remove.textContent="Remove";remove.addEventListener("click",async()=>{if(confirm(`Remove ${item.name||"this extension"}?`)){await run(()=>window.extensionsApi.remove(item.id));await refresh();}});actions.appendChild(remove);card.appendChild(actions);
+  const details=document.createElement("div");details.className="details";details.dataset.details=item.id;card.appendChild(details);return card;
+}
+async function toggleDetails(card,id){const panel=card.querySelector(".details");if(panel.classList.toggle("open")&&!panel.dataset.loaded){const details=await run(()=>window.extensionsApi.details(id));const pre=document.createElement("pre");pre.textContent=JSON.stringify(details.manifest||details,null,2);panel.appendChild(pre);panel.dataset.loaded="true";}}
+async function run(operation){setStatus("");try{return await operation();}catch(error){setStatus(error&&error.message||String(error));throw error;}}
+async function refresh(){state.items=await run(()=>window.extensionsApi.list())||[];render();}
+byId("install").addEventListener("click",()=>run(()=>window.extensionsApi.pickCrx()).then(refresh).catch(()=>{}));
+byId("unpacked").addEventListener("click",()=>run(()=>window.extensionsApi.pickUnpacked()).then(refresh).catch(()=>{}));
+byId("search").addEventListener("input",(event)=>{state.query=event.target.value;render();});
+refresh().catch(()=>{});
 </script>
 </body>
 </html>

@@ -83,7 +83,27 @@ exports = module.exports = (Menus) => ({
     getHelpMenu(Menus),
     {
       label: "Extensions",
-      click: () => Menus.openExtensionsManager(),
+      submenu: [
+        {
+          label: "Install CRX...",
+          enabled: Menus.configGroup.startupConfig.extensions?.enabled === true
+            && Menus.configGroup.startupConfig.extensions?.allowCrx !== false,
+          click: () => Menus.installExtensionCrx(),
+        },
+        {
+          label: "Load Unpacked...",
+          enabled: Menus.configGroup.startupConfig.extensions?.enabled === true
+            && Menus.configGroup.startupConfig.extensions?.allowUnpacked !== false,
+          click: () => Menus.loadExtensionUnpacked(),
+        },
+        {
+          type: "separator",
+        },
+        {
+          label: "Manage Extensions",
+          click: () => Menus.openExtensionsManager(),
+        },
+      ],
     },
     ...(Menus.configGroup.startupConfig.media?.video?.menuEnabled
       ? [

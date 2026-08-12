@@ -660,12 +660,15 @@ class Menus {
   }
 
   openExtensionsManager() {
-    try {
-      const { BrowserWindow } = require('electron');
-      const path = require('node:path');
-      const win = new BrowserWindow({ width: 560, height: 420, show: true, autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, '..', 'extensions', 'managerPreload.js') } });
-      win.loadFile(path.join(__dirname, '..', 'extensions', 'manager.html'));
-    } catch (e) { console.warn('[Extensions] open manager failed', e.message); }
+    app.emit('extension-open-manager');
+  }
+
+  installExtensionCrx() {
+    app.emit('extension-install-crx');
+  }
+
+  loadExtensionUnpacked() {
+    app.emit('extension-load-unpacked');
   }
   checkForUpdates() {
     autoUpdaterModule.checkForUpdates();
