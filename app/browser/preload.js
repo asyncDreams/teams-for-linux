@@ -220,9 +220,10 @@ globalThis.electronAPI = {
 
 // Config is fetched asynchronously; the Notification override below reads it via closure
 let notificationConfig = null;
-ipcRenderer.invoke("get-config").then((config) => {
-  notificationConfig = config;
-  // Dedup window for notificationMethod electron/custom -> suppress double sound + hide Teams in-app toast
+
+// Dedup window for notificationMethod electron/custom -> suppress double sound + hide Teams in-app toast.
+// Declared at module top-level scope so both playNotificationSound and the CustomNotification
+// factory (inside the IIFE below) can reach them.
 let lastOsNotificationAt = 0;
 const OS_NOTIFICATION_DEDUP_WINDOW_MS = 4000;
 function recordOsNotification() { lastOsNotificationAt = Date.now(); }
@@ -266,7 +267,10 @@ function installTeamsInAppToastSuppressor() {
   setInterval(hideTeamsToastDom, 800);
 }
 
-console.debug("Preload: Config loaded for notifications:", {
+ipcRenderer.invoke("get-config").then((config) => {
+  notificationConfig = config;
+  installTeamsInAppToastSuppressor();
+  console.debug("Preload: Config loaded for notifications:", {
     notificationMethod: config?.notificationMethod,
     disableNotifications: config?.disableNotifications
   });
