@@ -26,6 +26,7 @@ const CustomNotificationManager = require("./notificationSystem");
 const DownloadManager = require("./downloadManager");
 const QuickChatManager = require("./quickChat");
 const ScreenSharingService = require("./screenSharing/service");
+const { LinuxMediaControls } = require("./linux/mediaControls");
 const PartitionsManager = require("./partitions/manager");
 const ProfilesManager = require("./profilesManager");
 const ProfileViewManager = require("./mainAppWindow/profileViewManager");
@@ -154,7 +155,8 @@ const notificationService = new NotificationService(
   notificationHistoryService
 );
 
-const screenSharingService = new ScreenSharingService();
+const screenSharingService = new ScreenSharingService(config);
+const linuxMediaControls = new LinuxMediaControls(config, () => mainAppWindow.getWindow());
 
 const partitionsManager = new PartitionsManager(appConfig.settingsStore);
 
@@ -802,6 +804,7 @@ async function handleAppReady() {
     perf.mark("handleAppReady:certInit");
 
     await mainAppWindow.onAppReady(appConfig, customBackground, screenSharingService, profilesManager);
+    linuxMediaControls.initialize();
     perf.mark("handleAppReady:mainWindowReady");
 
     // Wire per-profile WebContentsView lifecycle once the main window

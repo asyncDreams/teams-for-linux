@@ -27,6 +27,7 @@ const allowedChannels = new Set([
   'get-screen-share-stream',
   'get-screen-sharing-displays',
   'get-screen-sharing-status',
+  'screen-sharing-get-diagnostics',
   'resize-preview-window',
   // main → renderer only (webContents.postMessage); not gated by this validator,
   // listed here so the allowlist stays authoritative per CLAUDE.md.
@@ -65,6 +66,7 @@ const allowedChannels = new Set([
   // Media status (camera/microphone)
   'camera-state-changed',
   'microphone-state-changed',
+  'linux-media-control',
 
   // Scheduled-meeting-start toast detection for MQTT (#2587)
   'meeting-started',

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen Sharing Diagnostics</title>
+  <link rel="stylesheet" href="../assets/css/fluent-parity.css">
+  <style>
+    :root { color-scheme: light dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #f7f8fc; color: #242338; }
+    @media (prefers-color-scheme: dark) { body { background: #171722; color: #f4f3ff; } .panel { background: #232332; } .value { color: #f4f3ff; } }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    .muted { color: #73728b; font-size: 13px; }
+    .panel { margin-top: 18px; padding: 18px; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(39, 35, 79, .10); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .metric { padding: 13px; border-radius: 10px; background: rgba(91, 91, 214, .09); }
+    .label { display: block; color: #73728b; font-size: 12px; }
+    .value { display: block; margin-top: 5px; font-size: 16px; font-weight: 600; color: #242338; }
+    .ok { color: #107c41; } .warn { color: #a15c00; } .bad { color: #b3261e; }
+    code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Screen Sharing Diagnostics</h1>
+  <div class="muted">Read-only desktop capture diagnostics. Environment values are reduced to safe capability flags.</div>
+  <section class="panel">
+    <div class="grid">
+      <div class="metric"><span class="label">Session</span><strong class="value" id="session">—</strong></div>
+      <div class="metric"><span class="label">Desktop / backend</span><strong class="value" id="backend">—</strong></div>
+      <div class="metric"><span class="label">Wayland mode</span><strong class="value" id="mode">—</strong></div>
+      <div class="metric"><span class="label">Sharing strategy</span><strong class="value" id="strategy">—</strong></div>
+      <div class="metric"><span class="label">Portal available</span><strong class="value" id="portal">—</strong></div>
+      <div class="metric"><span class="label">PipeWire path</span><strong class="value" id="pipewire">—</strong></div>
+      <div class="metric"><span class="label">Currently sharing</span><strong class="value" id="active">—</strong></div>
+      <div class="metric"><span class="label">Last error</span><strong class="value" id="error">None</strong></div>
+    </div>
+  </section>
+  <p class="muted" id="updated">Waiting for diagnostics…</p>
+  <script>
+    const get = (id) => document.getElementById(id);
+    const yesNo = (value) => value ? "Yes" : "No";
+    const setValue = (id, value, className = "") => {
+      const element = get(id);
+      element.textContent = value;
+      element.className = `value ${className}`;
+    };
+    function render(data) {
+      const session = data?.session || {};
+      setValue("session", `${session.sessionType || "unknown"}${session.isWayland ? " · native" : ""}`);
+      setValue("backend", `${session.desktop || "unknown"} · ${data?.backend || "unknown"}`);
+      setValue("mode", data?.mode || "auto");
+      setValue("strategy", data?.strategy || "unknown", data?.strategy === "portal" ? "ok" : "warn");
+      setValue("portal", yesNo(data?.available), data?.available ? "ok" : "warn");
+      setValue("pipewire", yesNo(data?.pipeWire), data?.pipeWire ? "ok" : "");
+      setValue("active", yesNo(data?.active), data?.active ? "ok" : "");
+      const lastError = data?.lastError;
+      setValue("error", lastError ? `${lastError.code || "unknown"} · ${lastError.at || ""}` : "None", lastError ? "bad" : "ok");
+      get("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    }
+    async function refresh() {
+      try { render(await globalThis.screenSharingDiagnosticsApi.get()); } catch { /* window may be closing */ }
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>

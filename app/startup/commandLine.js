@@ -29,7 +29,12 @@ class CommandLineManager {
       this.#configureMacPerformance(config);
     }
 
-    if (process.env.XDG_SESSION_TYPE === "wayland") {
+    const waylandMode = config.linux?.waylandMode ?? config.wayland?.mode ?? "auto";
+    if (
+      process.platform === "linux" &&
+      waylandMode !== "disabled" &&
+      (process.env.XDG_SESSION_TYPE === "wayland" || waylandMode === "enabled")
+    ) {
       this.#configureWayland(config);
     }
 
@@ -160,7 +165,11 @@ class CommandLineManager {
   //   2. GPU — auto-disabled unless user overrides or XWayland optimizations are on
   //   3. Fake media UI — applied unless XWayland optimizations skip it
   static #configureWayland(config) {
-    // 1. PipeWire is always required for screen sharing on Wayland
+    const waylandMode = config.linux?.waylandMode ?? config.wayland?.mode ?? "auto";
+    if (waylandMode === "disabled") return;
+    const portalEnabled = config.linux?.portal?.enabled ?? config.wayland?.portal?.enabled ?? true;
+
+    // 1. PipeWire is required for portal-backed screen sharing when enabled
     if (app.commandLine.hasSwitch("enable-features")) {
       const features = app.commandLine.getSwitchValue("enable-features").split(",");
       if (!features.includes("WebRTCPipeWireCapturer")) {
@@ -170,8 +179,8 @@ class CommandLineManager {
           "Please add WebRTCPipeWireCapturer to your enable-features list."
         );
       }
-    } else {
-      console.info("[Wayland] Enabling PipeWire for screen sharing");
+    } else if (portalEnabled) {
+      console.info("[Wayland] Enabling PipeWire for portal screen sharing");
       app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
     }
 
@@ -199,7 +208,7 @@ class CommandLineManager {
 
     // 3. Fake media UI: needed for screen sharing (#2217), but breaks camera
     //    under XWayland (#2169). Only skip when XWayland optimizations are on.
-    if (!xwaylandOptimizations) {
+    if (!xwaylandOptimizations && !portalEnabled) {
       app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
     }
   }

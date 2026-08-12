@@ -64,6 +64,14 @@ function setupScreenSharing(selectedSource) {
 // fires only for the session it is bound to, so multi-account profile views (running against
 // their own partition session) need their own binding. See #2529.
 function bindDisplayMediaHandler(targetSession) {
+  // On native Wayland, let Chromium hand the request to xdg-desktop-portal
+  // first. The Electron picker remains the fallback when the portal is absent,
+  // disabled, or the user is on X11/another platform.
+  if (screenSharingService?.shouldPreferPortal?.()) {
+    console.info("[SCREEN_SHARE] Using xdg-desktop-portal for display capture");
+    return;
+  }
+
   targetSession.setDisplayMediaRequestHandler((_request, callback) => {
     streamSelector.show((source) => {
       if (source) {

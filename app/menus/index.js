@@ -18,6 +18,7 @@ const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
 const NotificationHistoryWindow = require("../notifications/historyWindow");
 const PresenceDiagnosticsWindow = require("../presence/diagnosticsWindow");
+const ScreenSharingDiagnosticsWindow = require("../screenSharing/diagnosticsWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
 const AddProfileDialog = require("../profileDialogs/addProfile");
@@ -48,6 +49,7 @@ class Menus {
     this.documentationWindow = new DocumentationWindow();
     this.notificationHistoryWindow = new NotificationHistoryWindow(this.window);
     this.presenceDiagnosticsWindow = new PresenceDiagnosticsWindow(this.window);
+    this.screenSharingDiagnosticsWindow = new ScreenSharingDiagnosticsWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
     this.joinMeetingDialog = new JoinMeetingDialog(
       this.window,
@@ -481,6 +483,43 @@ class Menus {
     const current = this.configGroup.startupConfig.presence?.keepAlwaysOnlineMode;
     this.setKeepAlwaysOnlineMode(current === 'always' ? 'disabled' : 'always');
   }
+
+  setWaylandMode(mode) {
+    const validModes = new Set(["auto", "enabled", "disabled"]);
+    if (!validModes.has(mode)) return;
+    const linux = {
+      ...(this.configGroup.startupConfig.linux || {}),
+      waylandMode: mode,
+    };
+    this.configGroup.startupConfig.linux = linux;
+    this.configGroup.legacyConfigStore.set("linux", linux);
+    this.updateMenu();
+  }
+
+  toggleLinuxMediaControls() {
+    const linux = this.configGroup.startupConfig.linux || {};
+    const mediaControls = {
+      ...(linux.mediaControls || {}),
+      enabled: linux.mediaControls?.enabled !== true,
+    };
+    const next = { ...linux, mediaControls };
+    this.configGroup.startupConfig.linux = next;
+    this.configGroup.legacyConfigStore.set("linux", next);
+    this.updateMenu();
+  }
+
+  toggleLinuxPortal() {
+    const linux = this.configGroup.startupConfig.linux || {};
+    const portal = {
+      ...(linux.portal || {}),
+      enabled: linux.portal?.enabled !== true,
+    };
+    const next = { ...linux, portal };
+    this.configGroup.startupConfig.linux = next;
+    this.configGroup.legacyConfigStore.set("linux", next);
+    this.updateMenu();
+  }
+
   toggleNotificationAvatar() {
     const cur = this.configGroup.startupConfig.notifications || {};
     cur.avatar = !cur.avatar;
@@ -632,6 +671,10 @@ class Menus {
 
   openPresenceDiagnostics() {
     this.presenceDiagnosticsWindow.show();
+  }
+
+  openScreenSharingDiagnostics() {
+    this.screenSharingDiagnosticsWindow.show();
   }
 
   togglePresenceSync() {

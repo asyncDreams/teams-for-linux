@@ -120,6 +120,7 @@ globalThis.electronAPI = {
   },
 
   getConfig: () => ipcRenderer.invoke("get-config"),
+  getScreenSharingDiagnostics: () => ipcRenderer.invoke("screen-sharing-get-diagnostics"),
 
   showNotification: (options) => {
     if (!options || typeof options !== 'object') {

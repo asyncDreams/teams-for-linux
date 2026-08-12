@@ -1,11 +1,18 @@
 const { ipcMain, BrowserWindow, desktopCapturer, screen } = require("electron");
 const path = require("node:path");
+const { detectScreenSharingPortal, shouldPreferScreenSharingPortal } = require("../platform/wayland");
 
 class ScreenSharingService {
   #picker = null;
   #selectedScreenShareSource = null;
   #isSharing = false;
   #previewWindow = null;
+  #config;
+  #lastError = null;
+
+  constructor(config = {}) {
+    this.#config = config;
+  }
 
   initialize() {
     // Get available desktop capturer sources (screens/windows) for sharing
@@ -22,6 +29,8 @@ class ScreenSharingService {
     ipcMain.on("screen-sharing-stopped", this.#handleScreenSharingStopped.bind(this));
     // Get current screen sharing status
     ipcMain.handle("get-screen-sharing-status", this.#handleGetScreenSharingStatus.bind(this));
+    // Get Wayland/portal diagnostics and the active screen-sharing fallback strategy
+    ipcMain.handle("screen-sharing-get-diagnostics", this.#handleGetDiagnostics.bind(this));
     // Get screen share stream for thumbnail preview
     ipcMain.handle("get-screen-share-stream", this.#handleGetScreenShareStream.bind(this));
     // Get screen share screen details
@@ -50,6 +59,30 @@ class ScreenSharingService {
 
   isScreenSharingActive() {
     return this.#isSharing;
+  }
+
+  shouldPreferPortal() {
+    return shouldPreferScreenSharingPortal(this.#config);
+  }
+
+  getDiagnostics() {
+    const portal = detectScreenSharingPortal(this.#config);
+    return {
+      ...portal,
+      active: this.#isSharing,
+      lastError: this.#lastError,
+    };
+  }
+
+  #handleGetDiagnostics() {
+    return this.getDiagnostics();
+  }
+
+  #rememberError(error) {
+    this.#lastError = {
+      code: error?.code || error?.name || "unknown",
+      at: new Date().toISOString(),
+    };
   }
 
   /**
@@ -91,7 +124,8 @@ class ScreenSharingService {
         };
       });
     } catch (error) {
-      console.error("[SCREEN_SHARE] Failed to get desktop capturer sources:", error.message);
+      this.#rememberError(error);
+      console.error("[SCREEN_SHARE] Failed to get desktop capturer sources", { code: error?.code || error?.name || "unknown" });
       return [];
     }
   }
@@ -117,7 +151,8 @@ class ScreenSharingService {
       const chosen = await this.#showScreenPicker(sources);
       return chosen ? chosen.id : null;
     } catch (error) {
-      console.error("[SCREEN_SHARE] Failed to get desktop media sources:", error.message);
+      this.#rememberError(error);
+      console.error("[SCREEN_SHARE] Failed to get desktop media sources", { code: error?.code || error?.name || "unknown" });
       return null;
     }
   }

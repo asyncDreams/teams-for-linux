@@ -64,6 +64,36 @@ module.exports = {
         },
         applyMode: "restart",
       },
+      linux: {
+        default: {
+          waylandMode: "auto",
+          portal: {
+            enabled: true,
+          },
+          mediaControls: {
+            enabled: false,
+          },
+        },
+        describe:
+          "Linux desktop integration. waylandMode selects automatic, forced, or disabled Wayland handling. portal.enabled prefers xdg-desktop-portal/PipeWire screen sharing when available and falls back to the Electron picker. mediaControls is an opt-in Linux media-control bridge.",
+        type: "object",
+        fields: {
+          "waylandMode": {
+            type: "string",
+            describe: "Wayland handling mode: auto detects the active session, enabled forces Wayland integration, disabled uses the legacy path.",
+            choices: ["auto", "enabled", "disabled"],
+          },
+          "portal.enabled": {
+            type: "boolean",
+            describe: "Prefer xdg-desktop-portal/PipeWire for screen sharing when the active session supports it.",
+          },
+          "mediaControls.enabled": {
+            type: "boolean",
+            describe: "Expose Linux media/call controls through the desktop integration bridge. Off by default.",
+          },
+        },
+        applyMode: "restart",
+      },
       appIcon: {
         default: "",
         describe: "Teams app icon to show in the tray",
@@ -1260,11 +1290,24 @@ module.exports = {
       },
       wayland: {
         default: {
+          mode: "auto",
+          portal: {
+            enabled: true,
+          },
           xwaylandOptimizations: false,
         },
-        describe: "Wayland display server configuration. xwaylandOptimizations: keeps GPU enabled and skips fake media UI flag under XWayland (may fix camera issues but can break screen sharing)",
+        describe: "Legacy Wayland configuration aliases. Prefer linux.waylandMode and linux.portal.enabled for new configuration. xwaylandOptimizations keeps GPU enabled and skips fake media UI under XWayland.",
         type: "object",
         fields: {
+          "mode": {
+            type: "string",
+            describe: "Compatibility alias for linux.waylandMode.",
+            choices: ["auto", "enabled", "disabled"],
+          },
+          "portal.enabled": {
+            type: "boolean",
+            describe: "Compatibility alias for linux.portal.enabled.",
+          },
           "xwaylandOptimizations": {
             type: "boolean",
             describe:

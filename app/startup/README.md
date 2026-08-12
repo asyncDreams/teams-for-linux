@@ -8,7 +8,8 @@ Manages command line switches that must be set during app startup. Some switches
 
 **Key responsibilities:**
 - Media key handling configuration
-- Wayland/X11 display server detection and configuration
+- Wayland/X11 display server detection and configuration (`linux.waylandMode`: auto/enabled/disabled)
+- Portal/PipeWire screen-sharing preference with Electron picker fallback
 - GPU acceleration settings
 - Proxy and authentication configuration
 - User-defined Electron CLI flags from config

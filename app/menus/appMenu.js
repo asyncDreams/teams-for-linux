@@ -62,6 +62,10 @@ exports = module.exports = (Menus) => ({
           label: "Presence",
           submenu: getPresenceMenu(Menus),
         },
+        {
+          label: "Linux Desktop",
+          submenu: getLinuxDesktopMenu(Menus),
+        },
       ],
     },
     {
@@ -174,6 +178,42 @@ function getPresenceMenu(Menus) {
       type: "radio",
       checked: mode === "business-hours",
       click: () => Menus.setKeepAlwaysOnlineMode("business-hours"),
+    },
+  ];
+}
+
+function getLinuxDesktopMenu(Menus) {
+  const waylandMode = Menus.configGroup.startupConfig.linux?.waylandMode
+    || Menus.configGroup.startupConfig.wayland?.mode
+    || "auto";
+  return [
+    {
+      label: "Screen Sharing Diagnostics",
+      click: () => Menus.openScreenSharingDiagnostics(),
+    },
+    {
+      type: "separator",
+    },
+    ...["auto", "enabled", "disabled"].map((mode) => ({
+      label: `Wayland: ${mode[0].toUpperCase()}${mode.slice(1)}`,
+      type: "radio",
+      checked: waylandMode === mode,
+      click: () => Menus.setWaylandMode(mode),
+    })),
+    {
+      type: "separator",
+    },
+    {
+      label: "Prefer desktop portal for screen sharing",
+      type: "checkbox",
+      checked: Menus.configGroup.startupConfig.linux?.portal?.enabled !== false,
+      click: () => Menus.toggleLinuxPortal(),
+    },
+    {
+      label: "Linux media controls",
+      type: "checkbox",
+      checked: Menus.configGroup.startupConfig.linux?.mediaControls?.enabled === true,
+      click: () => Menus.toggleLinuxMediaControls(),
     },
   ];
 }
