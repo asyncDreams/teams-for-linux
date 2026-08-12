@@ -381,6 +381,7 @@ class Menus {
       disableBadgeCount: this.configGroup.startupConfig.disableBadgeCount,
       defaultNotificationUrgency: this.configGroup.startupConfig.defaultNotificationUrgency,
       notifications: this.configGroup.startupConfig.notifications,
+      presence: this.configGroup.startupConfig.presence,
     });
   }
 
@@ -456,12 +457,27 @@ class Menus {
     this.updateMenu();
   }
 
-  toggleKeepAlwaysOnline() {
+  setKeepAlwaysOnlineMode(mode) {
+    const validModes = new Set(['disabled', 'always', 'business-hours']);
+    if (!validModes.has(mode)) return;
     const cur = this.configGroup.startupConfig.presence || {};
-    cur.keepAlwaysOnline = !cur.keepAlwaysOnline;
+    cur.keepAlwaysOnlineMode = mode;
+    if (mode === 'business-hours') {
+      cur.businessHours = {
+        ...(cur.businessHours || {}),
+        enabled: true,
+      };
+    }
+    // Keep the legacy boolean synchronized for older config readers.
+    cur.keepAlwaysOnline = mode === 'always';
     this.configGroup.startupConfig.presence = cur;
     this.configGroup.legacyConfigStore.set('presence', cur);
     this.updateMenu();
+  }
+
+  toggleKeepAlwaysOnline() {
+    const current = this.configGroup.startupConfig.presence?.keepAlwaysOnlineMode;
+    this.setKeepAlwaysOnlineMode(current === 'always' ? 'disabled' : 'always');
   }
   toggleNotificationAvatar() {
     const cur = this.configGroup.startupConfig.notifications || {};

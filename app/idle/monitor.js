@@ -1,5 +1,6 @@
 const { ipcMain, powerMonitor } = require("electron");
 const fs = require("node:fs");
+const { shouldKeepOnline } = require("../presence/smartPresence");
 
 class IdleMonitor {
   // State file content values (what users write in the state file)
@@ -106,7 +107,7 @@ class IdleMonitor {
   }
 
   async #handleGetSystemIdleState() {
-    if (this.#config?.presence?.keepAlwaysOnline) {
+    if (shouldKeepOnline(this.#config, new Date())) {
       return { system: IdleMonitor.#SYSTEM_STATE_ACTIVE, userIdle: -1, userCurrent: this.#getUserStatus() };
     }
 

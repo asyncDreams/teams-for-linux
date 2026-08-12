@@ -658,6 +658,26 @@ function loadMenuToggleSettings() {
       }
     }
   }
+  // Presence menu selections are persisted in the legacy settings store so
+  // the Debug menu remains live without requiring a config-file edit.
+  if (appConfig.legacyConfigStore.has('presence')) {
+    const stored = appConfig.legacyConfigStore.get('presence');
+    if (stored && typeof stored === 'object') {
+      config.presence = { ...(config.presence || {}), ...stored };
+      if (stored.businessHours && typeof stored.businessHours === 'object') {
+        config.presence.businessHours = {
+          ...(config.presence.businessHours || {}),
+          ...stored.businessHours,
+        };
+      }
+      if (stored.graphPoll && typeof stored.graphPoll === 'object') {
+        config.presence.graphPoll = {
+          ...(config.presence.graphPoll || {}),
+          ...stored.graphPoll,
+        };
+      }
+    }
+  }
 }
 
 function initializeGraphApiClient() {

@@ -1,4 +1,9 @@
 const ReactHandler = require("./reactHandler");
+const {
+  KEEP_ONLINE_MODES,
+  normalizePresenceConfig,
+  shouldInjectKeepAlive,
+} = require("../../presence/smartPresence");
 const eventHandlers = [];
 // Supported events
 const supportedEvents = new Set([
@@ -103,6 +108,7 @@ class ActivityHub {
       clearInterval(this._authMonitorInterval);
       this._authMonitorInterval = null;
     }
+    this.stopKeepOnline();
   }
 
   setMachineState(state) {
@@ -121,14 +127,106 @@ class ActivityHub {
   }
 
   _keepOnlineInterval = null;
-  startKeepOnline(config) {
-    if (!config?.presence?.keepAlwaysOnline) return;
-    if (this._keepOnlineInterval) return;
-    this._keepOnlineInterval = setInterval(() => { try { this.setMachineState(1); } catch {} }, 60 * 1000);
-    try { this.setMachineState(1); } catch {}
+  _keepOnlineConfig = null;
+  _keepOnlineContext = {
+    inMeeting: false,
+    callActive: false,
+    presenting: false,
+    screenSharing: false,
+    currentStatus: null,
+  };
+  _keepOnlineEventHandles = [];
+  _keepOnlineDomHandlers = [];
+
+  _keepOnlineTick() {
+    if (!this._keepOnlineConfig) return;
+    if (shouldInjectKeepAlive(this._keepOnlineConfig, this._keepOnlineContext, new Date())) {
+      try {
+        this.setMachineState(1);
+      } catch {
+        // Teams' internal idle tracker is optional and can disappear on reload.
+      }
+    }
   }
-  stopKeepOnline() { if (this._keepOnlineInterval) { clearInterval(this._keepOnlineInterval); this._keepOnlineInterval = null; } }
-  initKeepAlwaysOnline(config) { try { this.startKeepOnline(config); } catch {} }
+
+  _installKeepOnlineContextListeners() {
+    if (this._keepOnlineEventHandles.length > 0) return;
+
+    this._keepOnlineEventHandles = [
+      this.on('call-connected', () => {
+        this._keepOnlineContext.inMeeting = true;
+        this._keepOnlineContext.callActive = true;
+      }),
+      this.on('call-disconnected', () => {
+        this._keepOnlineContext.inMeeting = false;
+        this._keepOnlineContext.callActive = false;
+      }),
+    ].filter(Boolean);
+
+    if (typeof globalThis.addEventListener !== 'function') return;
+    const statusHandler = (event) => {
+      this._keepOnlineContext.currentStatus = event?.detail?.status ?? null;
+    };
+    const presentingHandler = () => {
+      this._keepOnlineContext.presenting = true;
+      this._keepOnlineContext.screenSharing = true;
+    };
+    const presentingStoppedHandler = () => {
+      this._keepOnlineContext.presenting = false;
+      this._keepOnlineContext.screenSharing = false;
+    };
+    globalThis.addEventListener('user-status-changed-local', statusHandler);
+    globalThis.addEventListener('tfl-screen-sharing-started', presentingHandler);
+    globalThis.addEventListener('tfl-screen-sharing-stopped', presentingStoppedHandler);
+    this._keepOnlineDomHandlers = [
+      ['user-status-changed-local', statusHandler],
+      ['tfl-screen-sharing-started', presentingHandler],
+      ['tfl-screen-sharing-stopped', presentingStoppedHandler],
+    ];
+  }
+
+  startKeepOnline(config) {
+    this._keepOnlineConfig = config;
+    const { mode } = normalizePresenceConfig(config);
+    if (mode === KEEP_ONLINE_MODES.DISABLED) return;
+    if (this._keepOnlineInterval) return;
+
+    this._installKeepOnlineContextListeners();
+    this._keepOnlineInterval = setInterval(() => this._keepOnlineTick(), 60 * 1000);
+    this._keepOnlineTick();
+  }
+
+  stopKeepOnline() {
+    if (this._keepOnlineInterval) {
+      clearInterval(this._keepOnlineInterval);
+      this._keepOnlineInterval = null;
+    }
+    for (const handle of this._keepOnlineEventHandles) {
+      this.off('call-connected', handle);
+      this.off('call-disconnected', handle);
+    }
+    this._keepOnlineEventHandles = [];
+    if (typeof globalThis.removeEventListener === 'function') {
+      for (const [event, handler] of this._keepOnlineDomHandlers) {
+        globalThis.removeEventListener(event, handler);
+      }
+    }
+    this._keepOnlineDomHandlers = [];
+    this._keepOnlineConfig = null;
+  }
+
+  updateKeepOnlineConfig(config) {
+    this.stopKeepOnline();
+    this.startKeepOnline(config);
+  }
+
+  initKeepAlwaysOnline(config) {
+    try {
+      this.updateKeepOnlineConfig(config);
+    } catch {
+      // Presence enhancements must never stop the rest of the Teams preload.
+    }
+  }
   setUserStatus(status) {
     const teams2IdleTracker = ReactHandler.getTeams2IdleTracker();
     if (teams2IdleTracker) {

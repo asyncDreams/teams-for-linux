@@ -103,11 +103,15 @@ globalThis.electronAPI = {
   },
   sendScreenSharingStarted: (sourceId) => {
     if (sourceId === null || (typeof sourceId === 'string' && sourceId.length < 100)) {
+      globalThis.dispatchEvent(new CustomEvent('tfl-screen-sharing-started'));
       return ipcRenderer.send("screen-sharing-started", sourceId);
     }
     console.error('Invalid sourceId for screen sharing');
   },
-  sendScreenSharingStopped: () => ipcRenderer.send("screen-sharing-stopped"),
+  sendScreenSharingStopped: () => {
+    globalThis.dispatchEvent(new CustomEvent('tfl-screen-sharing-stopped'));
+    return ipcRenderer.send("screen-sharing-stopped");
+  },
   stopSharing: () => ipcRenderer.send("stop-screen-sharing-from-thumbnail"),
   sendSelectSource: () => ipcRenderer.send("select-source"),
   onSelectSource: (callback) => ipcRenderer.once("select-source", callback),
@@ -607,13 +611,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Keep-always-online: nudge Teams idle tracker to stay Available when enabled
     try {
       const ah = require("./tools/activityHub");
-      if (config?.presence?.keepAlwaysOnline && typeof ah.initKeepAlwaysOnline === 'function') ah.initKeepAlwaysOnline(config);
+      if (config?.presence && typeof ah.initKeepAlwaysOnline === 'function') ah.initKeepAlwaysOnline(config);
     } catch {}
     // Listen for config changes from the main process (e.g., when menu toggles are clicked)
     ipcRenderer.on("config-changed", (_event, configChanges) => {
       for (const [key, value] of Object.entries(configChanges)) {
         config[key] = value;
         if (notificationConfig) notificationConfig[key] = value;
+      }
+      if (Object.hasOwn(configChanges, 'presence')) {
+        try {
+          require("./tools/activityHub").updateKeepOnlineConfig(config);
+        } catch {
+          // Keep-online is optional; a stale Teams reload must not break preload.
+        }
       }
     });
 

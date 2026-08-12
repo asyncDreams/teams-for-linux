@@ -58,6 +58,10 @@ exports = module.exports = (Menus) => ({
           label: "Open GPU Info",
           click: () => Menus.showGpuInfo(),
         },
+        {
+          label: "Presence",
+          submenu: getPresenceMenu(Menus),
+        },
       ],
     },
     {
@@ -114,6 +118,31 @@ function getViewMenu(Menus) {
       },
     ],
   };
+}
+
+function getPresenceMenu(Menus) {
+  const mode = Menus.configGroup.startupConfig.presence?.keepAlwaysOnlineMode
+    || (Menus.configGroup.startupConfig.presence?.keepAlwaysOnline ? "always" : "disabled");
+  return [
+    {
+      label: "Disabled",
+      type: "radio",
+      checked: mode === "disabled",
+      click: () => Menus.setKeepAlwaysOnlineMode("disabled"),
+    },
+    {
+      label: "Always",
+      type: "radio",
+      checked: mode === "always",
+      click: () => Menus.setKeepAlwaysOnlineMode("always"),
+    },
+    {
+      label: "Business Hours",
+      type: "radio",
+      checked: mode === "business-hours",
+      click: () => Menus.setKeepAlwaysOnlineMode("business-hours"),
+    },
+  ];
 }
 
 function getSettingsMenu(Menus) {

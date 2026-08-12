@@ -744,9 +744,18 @@ module.exports = {
             intervalMs: 60000,
           },
           keepAlwaysOnline: false,
+          keepAlwaysOnlineMode: "disabled",
+          businessHours: {
+            enabled: false,
+            startTime: "09:00",
+            endTime: "17:00",
+            weekdays: [1, 2, 3, 4, 5],
+            timezone: "",
+          },
+          smartPresence: false,
         },
         describe:
-          "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). Off by default because the Teams token lacks Presence.Read scope and returns 403 until the tenant grants consent — see graph-api-integration-research.md. PII-safe: only availability/activity strings are mapped to status codes; raw Graph payloads are never logged.",
+          "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). keepAlwaysOnlineMode: disabled, always, or business-hours; disabled by default. businessHours: local schedule used by business-hours mode, with ISO weekday numbers 1 (Monday) through 7 (Sunday), a configured IANA timezone, and support for overnight windows. smartPresence: when true, keep-online nudges yield to meetings, calls, presenting, DND, and explicit Busy. The legacy keepAlwaysOnline boolean remains supported as an alias for always.",
         type: "object",
         fields: {
           "graphPoll.enabled": {
@@ -757,12 +766,43 @@ module.exports = {
           "graphPoll.intervalMs": {
             type: "number",
             describe:
-              "Poll interval in milliseconds for Graph /me/presence when graphPoll is enabled.",
+              "Poll interval in milliseconds for Microsoft Graph /me/presence when graphPoll is enabled.",
           },
           "keepAlwaysOnline": {
             type: "boolean",
             describe:
-              "Keep presence as Available even when the system is idle (forces active state reported to Teams and MQTT/tray). Disabled by default; lives under Debug in the menu.",
+              "Legacy alias for keepAlwaysOnlineMode=always. Kept for backwards compatibility with existing configuration files.",
+          },
+          "keepAlwaysOnlineMode": {
+            type: "string",
+            describe:
+              "Presence preservation mode. Disabled does not inject activity, Always maintains Available continuously, and Business Hours follows presence.businessHours.",
+            choices: ["disabled", "always", "business-hours"],
+          },
+          "businessHours.enabled": {
+            type: "boolean",
+            describe: "Enable the configured business-hours schedule when keepAlwaysOnlineMode is business-hours.",
+          },
+          "businessHours.startTime": {
+            type: "string",
+            describe: "Business-hours start in 24-hour HH:mm format.",
+          },
+          "businessHours.endTime": {
+            type: "string",
+            describe: "Business-hours end in 24-hour HH:mm format; overnight windows are supported.",
+          },
+          "businessHours.weekdays": {
+            type: "array",
+            describe: "ISO weekdays enabled for business-hours mode: 1 Monday through 7 Sunday.",
+          },
+          "businessHours.timezone": {
+            type: "string",
+            describe: "IANA timezone for the business-hours schedule; empty uses the operating system timezone.",
+          },
+          "smartPresence": {
+            type: "boolean",
+            describe:
+              "Yield keep-online activity injection while in a meeting/call, presenting, screen sharing, DND, or explicit Busy. Off by default.",
           },
         },
         applyMode: "restart",
