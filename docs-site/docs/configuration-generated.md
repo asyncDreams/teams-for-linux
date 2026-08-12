@@ -294,7 +294,7 @@ Object options group several related settings. The tables below list each nested
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `extensions.enabled` | `boolean` | `false` | Master flag for Chromium extension support (off by default). |
+| `extensions.enabled` | `boolean` | `false` | Master flag for Chromium extension support (off by default); the Extensions manager can change and persist this setting at runtime. |
 | `extensions.allowUnpacked` | `boolean` | `true` | Allow loading unpacked extensions via the Extensions manager. |
 | `extensions.allowCrx` | `boolean` | `true` | Allow validated CRX/ZIP installation via the Extensions manager. |
 | `extensions.developerMode` | `boolean` | `false` | Show advanced extension manifest and developer actions in the manager. |

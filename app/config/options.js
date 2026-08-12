@@ -1267,7 +1267,7 @@ module.exports = {
         fields: {
           "enabled": {
             type: "boolean",
-            describe: "Master flag for Chromium extension support (off by default).",
+            describe: "Master flag for Chromium extension support (off by default); the Extensions manager can change and persist this setting at runtime.",
           },
           "allowUnpacked": {
             type: "boolean",

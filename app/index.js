@@ -677,6 +677,14 @@ function loadMenuToggleSettings() {
       }
     }
   }
+  // Extension master-toggle selections are persisted in the legacy settings
+  // store so the manager UI can enable the feature without manual JSON edits.
+  if (appConfig.legacyConfigStore.has('extensions')) {
+    const stored = appConfig.legacyConfigStore.get('extensions');
+    if (stored && typeof stored === 'object') {
+      config.extensions = { ...(config.extensions || {}), ...stored };
+    }
+  }
   // Presence menu selections are persisted in the legacy settings store so
   // the Debug menu remains live without requiring a config-file edit.
   if (appConfig.legacyConfigStore.has('presence')) {
@@ -828,9 +836,13 @@ async function handleAppReady() {
       }
     }
 
-    // Chromium extensions (Otter.ai etc.) — unpacked only, off by default
+    // Optional Chromium extensions (CRX and unpacked), off by default
     try {
-      extensionManager = new ExtensionManager(config, appConfig.settingsStore);
+      extensionManager = new ExtensionManager(
+        config,
+        appConfig.settingsStore,
+        appConfig.legacyConfigStore,
+      );
       await extensionManager.initialize();
     } catch (e) { console.warn('[Extensions] init failed', e.message); }
     if (process.platform === "linux" && config.auth?.webauthn?.enabled) {

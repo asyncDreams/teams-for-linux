@@ -32,6 +32,7 @@ const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 class ExtensionManager {
   #config;
   #settingsStore;
+  #legacyConfigStore;
   #loaded = new Map();
   #session = null;
   #extensionRoot;
@@ -40,9 +41,10 @@ class ExtensionManager {
   #managerWindow = null;
   #registered = false;
 
-  constructor(config, settingsStore) {
+  constructor(config, settingsStore, legacyConfigStore = null) {
     this.#config = config;
     this.#settingsStore = settingsStore;
+    this.#legacyConfigStore = legacyConfigStore;
     this.#extensionRoot = path.join(app.getPath('userData'), 'extensions');
     this.#metadataPath = path.join(this.#extensionRoot, 'metadata.json');
     this.#registry = new ExtensionRegistry(this.#metadataPath, this.#settingsStore);
@@ -98,6 +100,9 @@ class ExtensionManager {
 
     // Extension manager list/read operations are intentionally limited to metadata.
     ipcMain.handle('extension-state', async () => this.state());
+    // Toggle the extension master switch from the manager UI; unlike extension
+    // actions this remains available while the feature is disabled.
+    ipcMain.handle('extension-set-master-enabled', async (_event, payload) => this.setMasterEnabled(payload?.enabled));
     ipcMain.handle('extension-list', async () => this.list());
     ipcMain.handle('extension-details', async (_event, payload) => this.details(payload?.id));
     ipcMain.handle('extension-load-unpacked', async (_event, payload) => {
@@ -313,6 +318,55 @@ class ExtensionManager {
     this.#replaceRecord(record.id, replacement);
     this.#persist();
     return this.#publicRecord(replacement);
+  }
+
+  async setMasterEnabled(enabled) {
+    const nextEnabled = enabled === true;
+    this.#config.extensions = {
+      ...(this.#config.extensions || {}),
+      enabled: nextEnabled,
+    };
+    this.#legacyConfigStore?.set('extensions', this.#config.extensions);
+
+    if (!nextEnabled) {
+      if (this.#session) {
+        for (const record of this.#loaded.values()) {
+          try { this.#session.removeExtension(record.id); } catch { /* already unloaded */ }
+          record.loaded = false;
+        }
+      }
+      this.#persist();
+      return this.state();
+    }
+
+    this.#session = this.#getSession();
+    const preload = Array.isArray(this.#config.extensions.preload)
+      ? this.#config.extensions.preload
+      : [];
+    for (const extensionPath of preload) {
+      if (this.#hasLoadedPath(extensionPath)) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#loadUnpacked(extensionPath, 'preload');
+      } catch (error) {
+        console.warn('[Extensions] Preload failed after enabling', {
+          pathBasename: path.basename(String(extensionPath)),
+          message: error.message,
+        });
+      }
+    }
+    for (const record of Array.from(this.#loaded.values())) {
+      if (!record.enabled || !record.path || this.#hasLoadedPath(record.path)) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#loadPersistedRecord(record);
+      } catch (error) {
+        record.lastError = error.message;
+        this.#loaded.set(record.id, record);
+      }
+    }
+    this.#persist();
+    return this.state();
   }
 
   state() {

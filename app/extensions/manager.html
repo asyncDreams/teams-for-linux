@@ -10,15 +10,15 @@
 :root{font-family:"Segoe UI",system-ui,sans-serif;color:#242424;background:#f7f7fb;--accent:#5b5bd6;--border:#dedee8;--muted:#61616e}
 *{box-sizing:border-box}body{margin:0;padding:24px;min-width:560px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
 h1{font-size:24px;letter-spacing:-.02em;margin:0}.eyebrow{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}
-.actions{display:flex;gap:8px;flex-wrap:wrap}button{border:1px solid var(--border);border-radius:7px;background:#fff;color:inherit;cursor:pointer;padding:8px 12px;font:inherit;font-size:13px}button:hover{border-color:var(--accent);box-shadow:0 2px 8px #36365c18}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:#a52b3b}.muted{color:var(--muted);font-size:12px}.notice{background:#eeefff;border:1px solid #d9d9ff;border-radius:10px;color:#39396f;padding:10px 12px;margin:0 0 16px;line-height:1.4}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}button{border:1px solid var(--border);border-radius:7px;background:#fff;color:inherit;cursor:pointer;padding:8px 12px;font:inherit;font-size:13px}button:hover{border-color:var(--accent);box-shadow:0 2px 8px #36365c18}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:#a52b3b}.muted{color:var(--muted);font-size:12px}.notice{background:#eeefff;border:1px solid #d9d9ff;border-radius:10px;color:#39396f;padding:10px 12px;margin:0 0 16px;line-height:1.4}
 .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px}.toolbar input{flex:1;border:1px solid var(--border);border-radius:7px;background:#fff;padding:9px 11px;font:inherit;color:inherit}.count{font-size:12px;color:var(--muted);white-space:nowrap}
-.grid{display:grid;gap:10px}.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 3px 14px #36365c0d}.card-top{display:flex;gap:12px;align-items:flex-start}.icon{height:42px;width:42px;flex:0 0 42px;border-radius:10px;background:linear-gradient(135deg,#5b5bd6,#3b82d0);display:grid;place-items:center;color:#fff;font-weight:700;font-size:19px;overflow:hidden}.icon img{height:100%;width:100%;object-fit:cover}.name{font-weight:650;font-size:15px}.meta{font-size:12px;color:var(--muted);margin-top:3px}.badge{display:inline-block;border-radius:999px;background:#e9e9f9;color:#4b4b9d;font-size:11px;padding:2px 7px;margin-left:5px}.disabled{opacity:.58}.card-actions{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0 54px}.card-actions button{padding:6px 9px;font-size:12px}.details{border-top:1px solid #ededf2;margin:12px 0 0 54px;padding-top:10px;display:none}.details.open{display:block}.details pre{white-space:pre-wrap;word-break:break-word;background:#f4f4f8;border-radius:7px;padding:9px;font-size:11px;max-height:180px;overflow:auto}.empty{text-align:center;border:1px dashed #cacaD8;border-radius:12px;color:var(--muted);padding:36px 20px}.status{min-height:18px;margin:8px 0;color:#a52b3b;font-size:12px}
+.grid{display:grid;gap:10px}.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 3px 14px #36365c0d}.card-top{display:flex;gap:12px;align-items:flex-start}.icon{height:42px;width:42px;flex:0 0 42px;border-radius:10px;background:linear-gradient(135deg,#5b5bd6,#3b82d0);display:grid;place-items:center;color:#fff;font-weight:700;font-size:19px;overflow:hidden}.icon img{height:100%;width:100%;object-fit:cover}.name{font-weight:650;font-size:15px}.meta{font-size:12px;color:var(--muted);margin-top:3px}.badge{display:inline-block;border-radius:999px;background:#e9e9f9;color:#4b4b9d;font-size:11px;padding:2px 7px;margin-left:5px}.disabled{opacity:.58}.card-actions{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0 54px}.card-actions button{padding:6px 9px;font-size:12px}.details{border-top:1px solid #ededf2;margin:12px 0 0 54px;padding-top:10px;display:none}.details.open{display:block}.details pre{white-space:pre-wrap;word-break:break-word;background:#f4f4f8;border-radius:7px;padding:9px;font-size:11px;max-height:180px;overflow:auto}.empty{text-align:center;border:1px dashed #cacaD8;border-radius:12px;color:var(--muted);padding:36px 20px}.status{min-height:18px;margin:8px 0;color:#a52b3b;font-size:12px}.master-toggle{display:flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:999px;padding:7px 10px;background:#fff;font-size:12px;white-space:nowrap}.master-toggle input{accent-color:var(--accent);width:16px;height:16px;margin:0}.master-toggle.enabled{border-color:var(--accent);color:var(--accent)}
 @media(prefers-color-scheme:dark){:root{color:#eee;background:#1d1d25;--border:#3a3a48;--muted:#b4b4c2}.card,button,.toolbar input{background:#292934;color:#eee}.notice{background:#2d2d50;color:#e3e3ff}.details pre{background:#20202a}}
 </style>
 </head>
 <body>
-<header><div><div class="eyebrow">Teams for Linux</div><h1><img src="../assets/icons/tfl-collab.svg" alt="" style="width:28px;height:28px;vertical-align:-5px;margin-right:7px">Extensions</h1></div><div class="actions"><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
-<div id="notice" class="notice">Extensions are optional and disabled by default. CRX files are validated before being copied to your local profile. Otter.ai can be installed here if its downloaded extension is supplied as a CRX or unpacked folder.</div>
+<header><div><div class="eyebrow">Teams for Linux</div><h1><img src="../assets/icons/tfl-collab.svg" alt="" style="width:28px;height:28px;vertical-align:-5px;margin-right:7px">Extensions</h1></div><div class="actions"><label id="master-toggle-wrap" class="master-toggle"><input id="master-toggle" type="checkbox"><span>Enable extensions</span></label><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
+<div id="notice" class="notice">Extensions are optional and disabled by default. Turn on the toggle to enable the extension session; CRX files are validated before being copied to your local profile.</div>
 <div class="toolbar"><input id="search" type="search" placeholder="Search installed extensions" autocomplete="off"><span id="count" class="count"></span></div>
 <div id="status" class="status" role="status" aria-live="polite"></div><main id="extensions" class="grid"></main>
 <script>
@@ -56,11 +56,26 @@ async function run(operation){setStatus("");try{return await operation();}catch(
 async function refresh(){
   state.config=await run(()=>window.extensionsApi.state())||state.config;
   state.items=await run(()=>window.extensionsApi.list())||[];
+  const masterToggle=byId("master-toggle");
+  masterToggle.checked=state.config.enabled===true;
+  byId("master-toggle-wrap").classList.toggle("enabled",masterToggle.checked);
   byId("install").disabled=!(state.config.enabled&&state.config.allowCrx);
   byId("unpacked").disabled=!(state.config.enabled&&state.config.allowUnpacked);
-  if(!state.config.enabled)byId("notice").textContent="Extension support is disabled. Set extensions.enabled=true and restart to install or enable extensions.";
+  byId("notice").textContent=state.config.enabled
+    ? "Extension support is enabled. Install Otter.ai or another validated Chromium extension from this window."
+    : "Extension support is disabled. Turn on Enable extensions to install or enable extensions.";
   render();
 }
+byId("master-toggle").addEventListener("change",async(event)=>{
+  const enabled=event.target.checked;
+  try{
+    state.config=await run(()=>window.extensionsApi.setMasterEnabled(enabled))||state.config;
+    await refresh();
+  }catch{
+    event.target.checked=!enabled;
+    byId("master-toggle-wrap").classList.toggle("enabled",!enabled);
+  }
+});
 byId("install").addEventListener("click",()=>run(()=>window.extensionsApi.pickCrx()).then(refresh).catch(()=>{}));
 byId("unpacked").addEventListener("click",()=>run(()=>window.extensionsApi.pickUnpacked()).then(refresh).catch(()=>{}));
 byId("search").addEventListener("input",(event)=>{state.query=event.target.value;render();});

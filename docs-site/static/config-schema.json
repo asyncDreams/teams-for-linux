@@ -1455,7 +1455,7 @@
           "path": "enabled",
           "type": "boolean",
           "default": false,
-          "description": "Master flag for Chromium extension support (off by default)."
+          "description": "Master flag for Chromium extension support (off by default); the Extensions manager can change and persist this setting at runtime."
         },
         {
           "path": "allowUnpacked",
