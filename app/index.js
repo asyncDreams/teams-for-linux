@@ -21,6 +21,7 @@ const { sanitize: sanitizePii } = require("./utils/logSanitizer");
 const { register: registerGlobalShortcuts, sendKeyboardEventToWindow } = require("./globalShortcuts");
 const CommandLineManager = require("./startup/commandLine");
 const NotificationService = require("./notifications/service");
+const NotificationHistoryService = require("./notifications/history");
 const CustomNotificationManager = require("./notificationSystem");
 const DownloadManager = require("./downloadManager");
 const QuickChatManager = require("./quickChat");
@@ -130,12 +131,18 @@ const mainAppWindow = require("./mainAppWindow");
 
 // Injected into NotificationService to break coupling
 const getUserStatus = () => userStatus;
+const notificationHistoryService = new NotificationHistoryService(
+  app.getPath("userData"),
+  config.notifications?.history
+);
 
 const notificationService = new NotificationService(
   player,
   config,
   mainAppWindow,
-  getUserStatus
+  getUserStatus,
+  null,
+  notificationHistoryService
 );
 
 const screenSharingService = new ScreenSharingService();
@@ -263,6 +270,7 @@ if (gotTheLock) {
   });
 
   notificationService.initialize();
+  notificationHistoryService.initialize();
   screenSharingService.initialize();
   partitionsManager.initialize();
 
@@ -734,6 +742,7 @@ async function handleAppReady() {
     perf.mark("handleAppReady:mqttInit");
 
     loadMenuToggleSettings();
+    notificationHistoryService.setOptions(config.notifications?.history);
 
     const customBackground = new CustomBackground(app, config);
     customBackground.initialize();

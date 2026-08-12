@@ -390,6 +390,10 @@ module.exports = {
           actions: false,
           avatar: false,
           suppressInApp: true,
+          history: {
+            enabled: false,
+            retentionDays: 30,
+          },
         },
         describe:
           "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
@@ -426,6 +430,17 @@ module.exports = {
             type: "boolean",
             describe:
               "Hide Teams' built-in in-app toast/banner when an OS notification is shown (prevents double toast). On by default.",
+          },
+          "history.enabled": {
+            type: "boolean",
+            describe:
+              "Persist a local notification timeline and expose it through View > Notification History. Off by default.",
+          },
+          "history.retentionDays": {
+            type: "number",
+            describe:
+              "Notification history retention: 7, 30, or 90 days; 0 keeps entries until manually cleared.",
+            choices: [7, 30, 90, 0],
           },
         },
         applyMode: "live",

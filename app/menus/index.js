@@ -16,6 +16,7 @@ const Tray = require("./tray");
 const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
+const NotificationHistoryWindow = require("../notifications/historyWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
 const AddProfileDialog = require("../profileDialogs/addProfile");
@@ -44,6 +45,7 @@ class Menus {
     this.profilesManager = profilesManager;
     this.allowQuit = false;
     this.documentationWindow = new DocumentationWindow();
+    this.notificationHistoryWindow = new NotificationHistoryWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
     this.joinMeetingDialog = new JoinMeetingDialog(
       this.window,
@@ -595,6 +597,19 @@ class Menus {
 
   showDocumentation() {
     this.documentationWindow.show();
+  }
+
+  openNotificationHistory() {
+    if (this.configGroup.startupConfig.notifications?.history?.enabled !== true) {
+      dialog.showMessageBox(this.window, {
+        type: "info",
+        title: "Notification History",
+        message: "Notification history is disabled",
+        detail: "Set notifications.history.enabled to true in your configuration, then restart Teams for Linux.",
+      });
+      return;
+    }
+    this.notificationHistoryWindow.show();
   }
 
   showGpuInfo() {

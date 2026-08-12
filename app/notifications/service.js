@@ -46,13 +46,15 @@ class NotificationService {
   #notificationSounds;
   #avatarCache;
   #graphApiClient;
+  #historyService;
 
-  constructor(soundPlayer, config, mainWindow, getUserStatus, graphApiClient = null) {
+  constructor(soundPlayer, config, mainWindow, getUserStatus, graphApiClient = null, historyService = null) {
     this.#soundPlayer = soundPlayer;
     this.#config = config;
     this.#mainWindow = mainWindow;
     this.#getUserStatus = getUserStatus;
     this.#graphApiClient = graphApiClient;
+    this.#historyService = historyService;
     this.#avatarCache = new AvatarCache();
 
     this.#notificationSounds = [
@@ -69,6 +71,10 @@ class NotificationService {
 
   setGraphApiClient(client) {
     this.#graphApiClient = client;
+  }
+
+  setHistoryService(historyService) {
+    this.#historyService = historyService;
   }
 
   initialize() {
@@ -272,6 +278,8 @@ class NotificationService {
         actions = [{ type: "button", text: "Open" }];
       }
     }
+
+    this.#recordHistory(parsed, urgency, actions);
 
     try {
       await this.#playNotificationSound({
@@ -479,6 +487,16 @@ class NotificationService {
 
   async #showNotification(options) {
     const startTime = Date.now();
+    this.#recordHistory({
+      notificationId: options.notificationId,
+      title: options.title,
+      body: options.body,
+      kind: options.kind || "unknown",
+      sender: options.sender,
+      conversation: options.conversation,
+      deepLink: options.deepLink,
+      iconDataUrl: options.icon,
+    }, this.#config.defaultNotificationUrgency, options.actions);
     console.debug("[NOTIFICATIONS] Native notification request received", {
       titleLength: options.title?.length || 0,
       bodyLength: options.body?.length || 0,
@@ -546,6 +564,43 @@ class NotificationService {
         elapsedMs: Date.now() - startTime,
         suggestion: "Check if notification permissions are granted or icon data is valid",
       });
+    }
+  }
+
+  #recordHistory(parsed, urgency, actions) {
+    if (!this.#historyService || typeof this.#historyService.record !== "function") return;
+    try {
+      const kind = VALID_KINDS.has(parsed.kind) ? parsed.kind : "unknown";
+      const sender = parsed.sender || {};
+      const conversation = parsed.conversation || {};
+      const conversationTitle =
+        conversation.title ||
+        conversation.displayName ||
+        parsed.chatTitle ||
+        parsed.channelTitle ||
+        parsed.meetingName ||
+        "";
+      this.#historyService.record({
+        id: parsed.notificationId,
+        timestamp: Date.now(),
+        sender: {
+          displayName: sender.displayName,
+          avatar: sender.avatarRef || parsed.iconDataUrl,
+        },
+        conversationTitle,
+        preview: parsed.body || parsed.preview || "",
+        type: kind,
+        urgency,
+        metadata: {
+          conversation: conversation.key || null,
+          meeting: parsed.meeting || null,
+          channel: parsed.channel || null,
+        },
+        actions,
+        deepLink: parsed.deepLink,
+      });
+    } catch {
+      // History is best-effort and must never block a notification.
     }
   }
 

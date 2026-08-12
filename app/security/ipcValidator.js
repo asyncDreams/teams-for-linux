@@ -170,7 +170,16 @@ const allowedChannels = new Set([
   'extension-remove',
   'extension-set-enabled',
   'extension-open-manager',
-  'notification-toast-action'
+  'notification-toast-action',
+
+  // Persistent notification history center
+  'notification-history-list',
+  'notification-history-mark-read',
+  'notification-history-mark-all-read',
+  'notification-history-clear',
+  'notification-history-clear-all',
+  'notification-history-export',
+  'notification-history-unread-count'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);

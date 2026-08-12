@@ -18,6 +18,7 @@ exports = module.exports = (Menus) => ({
       label: "Return to Teams",
       click: () => Menus.returnToTeams(),
     },
+    getViewMenu(Menus),
     ...(Menus.configGroup.startupConfig.quickChat?.enabled
       ? [
           {
@@ -102,6 +103,18 @@ exports = module.exports = (Menus) => ({
     },
   ],
 });
+
+function getViewMenu(Menus) {
+  return {
+    label: "View",
+    submenu: [
+      {
+        label: "Notification History",
+        click: () => Menus.openNotificationHistory(),
+      },
+    ],
+  };
+}
 
 function getSettingsMenu(Menus) {
   return {
