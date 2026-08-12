@@ -12,4 +12,8 @@ contextBridge.exposeInMainWorld('notificationApi', {
   notifyClick: () => {
     ipcRenderer.send('notification-toast-click');
   },
+
+  notifyAction: (action) => {
+    ipcRenderer.send('notification-toast-action', action);
+  },
 });

@@ -152,8 +152,11 @@ const profilesManager = new ProfilesManager(appConfig.settingsStore);
 // multi-account flag is on; the manager is wired to the main window
 // after `mainAppWindow.onAppReady` resolves.
 let profileViewManager = null;
+let extensionManager = null;
 
 const idleMonitor = new IdleMonitor(config, getUserStatus);
+const ExtensionManager = require("./extensions/manager");
+
 
 const customNotificationManager = new CustomNotificationManager(config, mainAppWindow);
 
@@ -776,6 +779,11 @@ async function handleAppReady() {
       }
     }
 
+    // Chromium extensions (Otter.ai etc.) — unpacked only, off by default
+    try {
+      extensionManager = new ExtensionManager(config, appConfig.settingsStore);
+      await extensionManager.initialize();
+    } catch (e) { console.warn('[Extensions] init failed', e.message); }
     if (process.platform === "linux" && config.auth?.webauthn?.enabled) {
       await WebAuthn.initialize(mainAppWindow.getWindow(), config);
     }

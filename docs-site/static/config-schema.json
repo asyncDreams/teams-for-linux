@@ -1,7 +1,7 @@
 {
   "$generatedBy": "scripts/generateConfigDocs.js",
   "source": "app/config/options.js",
-  "optionCount": 74,
+  "optionCount": 75,
   "options": [
     {
       "name": "appActiveCheckInterval",
@@ -418,7 +418,8 @@
         },
         "grouping": false,
         "actions": false,
-        "avatar": false
+        "avatar": false,
+        "suppressInApp": true
       },
       "description": "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
       "applyMode": "live",
@@ -461,6 +462,12 @@
           "type": "boolean",
           "default": false,
           "description": "Fetch and display sender avatar in notifications when available (uses notification payload icon or Graph People photo). Off by default."
+        },
+        {
+          "path": "suppressInApp",
+          "type": "boolean",
+          "default": true,
+          "description": "Hide Teams' built-in in-app toast/banner when an OS notification is shown (prevents double toast). On by default."
         }
       ]
     },
@@ -778,7 +785,8 @@
         "graphPoll": {
           "enabled": false,
           "intervalMs": 60000
-        }
+        },
+        "keepAlwaysOnline": false
       },
       "description": "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). Off by default because the Teams token lacks Presence.Read scope and returns 403 until the tenant grants consent — see graph-api-integration-research.md. PII-safe: only availability/activity strings are mapped to status codes; raw Graph payloads are never logged.",
       "applyMode": "restart",
@@ -794,6 +802,12 @@
           "type": "number",
           "default": 60000,
           "description": "Poll interval in milliseconds for Graph /me/presence when graphPoll is enabled."
+        },
+        {
+          "path": "keepAlwaysOnline",
+          "type": "boolean",
+          "default": false,
+          "description": "Keep presence as Available even when the system is idle (forces active state reported to Teams and MQTT/tray). Disabled by default; lives under Debug in the menu."
         }
       ]
     },
@@ -1238,6 +1252,37 @@
           "type": "boolean",
           "default": false,
           "description": "Opt-in flag for the single-window multi-account profile switcher; mutually exclusive with auth.intune.enabled."
+        }
+      ]
+    },
+    {
+      "name": "extensions",
+      "type": "object",
+      "default": {
+        "enabled": false,
+        "allowUnpacked": true,
+        "preload": []
+      },
+      "description": "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Requires restart.",
+      "applyMode": "restart",
+      "fields": [
+        {
+          "path": "enabled",
+          "type": "boolean",
+          "default": false,
+          "description": "Master flag for Chromium extension support (off by default)."
+        },
+        {
+          "path": "allowUnpacked",
+          "type": "boolean",
+          "default": true,
+          "description": "Allow loading unpacked extensions via the Extensions manager."
+        },
+        {
+          "path": "preload",
+          "type": "array",
+          "default": [],
+          "description": "Absolute paths to unpacked extension directories loaded at startup."
         }
       ]
     },

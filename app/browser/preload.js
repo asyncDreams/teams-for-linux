@@ -222,7 +222,51 @@ globalThis.electronAPI = {
 let notificationConfig = null;
 ipcRenderer.invoke("get-config").then((config) => {
   notificationConfig = config;
-  console.debug("Preload: Config loaded for notifications:", {
+  // Dedup window for notificationMethod electron/custom -> suppress double sound + hide Teams in-app toast
+let lastOsNotificationAt = 0;
+const OS_NOTIFICATION_DEDUP_WINDOW_MS = 4000;
+function recordOsNotification() { lastOsNotificationAt = Date.now(); }
+function shouldSuppressTeamsInAppToast() {
+  if (notificationConfig?.notifications?.suppressInApp === false) return false;
+  const method = notificationConfig?.notificationMethod;
+  if (method !== 'electron' && method !== 'custom') return false;
+  return Date.now() - lastOsNotificationAt < OS_NOTIFICATION_DEDUP_WINDOW_MS;
+}
+function installTeamsInAppToastSuppressor() {
+  if (globalThis.__tflToastSuppressorInstalled) return;
+  globalThis.__tflToastSuppressorInstalled = true;
+  const hideTeamsToastDom = () => {
+    if (!shouldSuppressTeamsInAppToast()) return;
+    try {
+      const selectors = [
+        '[data-tid*="notification" i][role="alert"]',
+        '[data-testid*="notification" i][role="alert"]',
+        '[data-tid*="toast" i]',
+        '[role="alert"][aria-label*="notification" i]',
+      ];
+      for (const sel of selectors) {
+        try {
+          const nodes = document.querySelectorAll(sel);
+          nodes.forEach((n) => {
+            try { n.style.display = 'none'; n.setAttribute('data-tfl-suppressed', '1'); } catch {}
+          });
+        } catch {}
+      }
+    } catch {}
+  };
+  const obs = new MutationObserver(() => hideTeamsToastDom());
+  const startObs = () => {
+    try {
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class','style'] });
+    } catch {}
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObs, { once: true });
+  else startObs();
+  // Poll fallback for shadow-dom teams renders
+  setInterval(hideTeamsToastDom, 800);
+}
+
+console.debug("Preload: Config loaded for notifications:", {
     notificationMethod: config?.notificationMethod,
     disableNotifications: config?.disableNotifications
   });
@@ -260,11 +304,13 @@ function createNotificationStub() {
 }
 
 function playNotificationSound(notifSound) {
-  // Skip renderer-side sound for "electron" method — the main process
-  // notification service already plays the sound before showing the notification.
   const method = notificationConfig?.notificationMethod || "web";
-  if (method === "electron") {
-    return;
+  if (method === "electron" || method === "custom") {
+    // Main process already plays the notification sound for electron/custom;
+    // still allow renderer sound only if OS notification not recently sent.
+    if (Date.now() - lastOsNotificationAt < OS_NOTIFICATION_DEDUP_WINDOW_MS) return;
+    // For electron, always delegate to main; for custom, main also plays
+    if (method === "electron") return;
   }
   if (globalThis.electronAPI?.playNotificationSound) {
     try {
@@ -446,8 +492,10 @@ function createCustomNotification(title, options) {
           icon: parsed.iconDataUrl || options.icon,
           title: parsed.title,
         };
+          recordOsNotification();
         return createCustomNotification(parsed.title, customOpts);
       }
+      recordOsNotification();
       return createCustomNotification(title, options);
     }
 
@@ -466,6 +514,7 @@ function createCustomNotification(title, options) {
       return notification || { onclick: null, onclose: null, onerror: null };
     }
 
+    recordOsNotification();
     return createElectronNotification(options, parsed, preId);
   }
 
@@ -551,10 +600,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error("Preload: ActivityManager failed to initialize:", err.message);
     }
 
+    // Keep-always-online: nudge Teams idle tracker to stay Available when enabled
+    try {
+      const ah = require("./tools/activityHub");
+      if (config?.presence?.keepAlwaysOnline && typeof ah.initKeepAlwaysOnline === 'function') ah.initKeepAlwaysOnline(config);
+    } catch {}
     // Listen for config changes from the main process (e.g., when menu toggles are clicked)
     ipcRenderer.on("config-changed", (_event, configChanges) => {
       for (const [key, value] of Object.entries(configChanges)) {
         config[key] = value;
+        if (notificationConfig) notificationConfig[key] = value;
       }
     });
 

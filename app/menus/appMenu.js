@@ -76,6 +76,10 @@ exports = module.exports = (Menus) => ({
       click: () => Menus.about(),
     },
     getHelpMenu(Menus),
+    {
+      label: "Extensions",
+      click: () => Menus.openExtensionsManager(),
+    },
     ...(Menus.configGroup.startupConfig.media?.video?.menuEnabled
       ? [
           {

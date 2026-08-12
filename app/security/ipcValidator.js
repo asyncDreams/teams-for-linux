@@ -163,7 +163,14 @@ const allowedChannels = new Set([
   'profile-switcher-open-add',
   'profile-switcher-open-manage',
   'profile-switcher-set-expanded',
-  'profile-switcher-state'
+  'profile-switcher-state',
+  // Chromium extensions (unpacked, off by default)
+  'extension-list',
+  'extension-load-unpacked',
+  'extension-remove',
+  'extension-set-enabled',
+  'extension-open-manager',
+  'notification-toast-action'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);

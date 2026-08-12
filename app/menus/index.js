@@ -454,6 +454,13 @@ class Menus {
     this.updateMenu();
   }
 
+  toggleKeepAlwaysOnline() {
+    const cur = this.configGroup.startupConfig.presence || {};
+    cur.keepAlwaysOnline = !cur.keepAlwaysOnline;
+    this.configGroup.startupConfig.presence = cur;
+    this.configGroup.legacyConfigStore.set('presence', cur);
+    this.updateMenu();
+  }
   toggleNotificationAvatar() {
     const cur = this.configGroup.startupConfig.notifications || {};
     cur.avatar = !cur.avatar;
@@ -604,6 +611,14 @@ class Menus {
     }
   }
 
+  openExtensionsManager() {
+    try {
+      const { BrowserWindow } = require('electron');
+      const path = require('node:path');
+      const win = new BrowserWindow({ width: 560, height: 420, show: true, autoHideMenuBar: true, webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, '..', 'extensions', 'managerPreload.js') } });
+      win.loadFile(path.join(__dirname, '..', 'extensions', 'manager.html'));
+    } catch (e) { console.warn('[Extensions] open manager failed', e.message); }
+  }
   checkForUpdates() {
     autoUpdaterModule.checkForUpdates();
   }

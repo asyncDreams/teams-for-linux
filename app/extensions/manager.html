@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Extensions</title>
+<style>
+*{box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;margin:16px;color:#222}
+h1{font-size:16px;margin:0 0 12px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:13px}
+button{padding:6px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
+button.primary{background:#5B5BD6;color:#fff;border-color:#5B5BD6}
+.muted{color:#666;font-size:12px}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0}
+input[type=text]{flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:4px}
+</style>
+</head>
+<body>
+<h1>Extensions</h1>
+<p class="muted">Load unpacked Chromium extensions (e.g. Otter.ai). Requires restart to apply preload paths set in config. Paths in <code>extensions.preload</code> are loaded at startup when <code>extensions.enabled</code> is true.</p>
+<div class="row">
+  <input id="path" type="text" placeholder="/absolute/path/to/unpacked-extension">
+  <button id="load" class="primary">Load unpacked</button>
+</div>
+<div id="status" class="muted"></div>
+<table><thead><tr><th>Name</th><th>Version</th><th>Enabled</th><th></th></tr></thead><tbody id="tbody"></tbody></table>
+<script>
+async function refresh(){
+  const list = await window.extensionsApi.list();
+  const tb=document.getElementById('tbody'); tb.innerHTML='';
+  list.forEach(e=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${e.name}</td><td>${e.version}</td><td><input type="checkbox" ${e.enabled?'checked':''} data-id="${e.id}" class="en"></td><td><button data-id="${e.id}" class="rm">Remove</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('.en').forEach(cb=>cb.addEventListener('change',async()=>{await window.extensionsApi.setEnabled(cb.dataset.id, cb.checked);}));
+  tb.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',async()=>{await window.extensionsApi.remove(b.dataset.id); refresh();}));
+}
+document.getElementById('load').addEventListener('click', async()=>{
+  const p=document.getElementById('path').value.trim();
+  if(!p){document.getElementById('status').textContent='Enter an absolute path.';return;}
+  try{await window.extensionsApi.loadUnpacked(p); document.getElementById('status').textContent='Loaded. Restart may be needed for some extensions.'; refresh();}catch(e){document.getElementById('status').textContent=e.message||String(e);}
+});
+refresh();
+</script>
+</body>
+</html>

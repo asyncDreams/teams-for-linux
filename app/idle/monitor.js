@@ -106,6 +106,9 @@ class IdleMonitor {
   }
 
   async #handleGetSystemIdleState() {
+    if (this.#config?.presence?.keepAlwaysOnline) {
+      return { system: IdleMonitor.#SYSTEM_STATE_ACTIVE, userIdle: -1, userCurrent: this.#getUserStatus() };
+    }
 
     // If forceState is enabled, check state file for override
     if (this.#config.idleDetection?.forceState) {

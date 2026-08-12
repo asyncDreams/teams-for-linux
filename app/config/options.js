@@ -389,6 +389,7 @@ module.exports = {
           grouping: false,
           actions: false,
           avatar: false,
+          suppressInApp: true,
         },
         describe:
           "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
@@ -420,6 +421,11 @@ module.exports = {
             type: "boolean",
             describe:
               "Fetch and display sender avatar in notifications when available (uses notification payload icon or Graph People photo). Off by default.",
+          },
+          "suppressInApp": {
+            type: "boolean",
+            describe:
+              "Hide Teams' built-in in-app toast/banner when an OS notification is shown (prevents double toast). On by default.",
           },
         },
         applyMode: "live",
@@ -722,6 +728,7 @@ module.exports = {
             enabled: false,
             intervalMs: 60000,
           },
+          keepAlwaysOnline: false,
         },
         describe:
           "Presence sync configuration. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). Off by default because the Teams token lacks Presence.Read scope and returns 403 until the tenant grants consent — see graph-api-integration-research.md. PII-safe: only availability/activity strings are mapped to status codes; raw Graph payloads are never logged.",
@@ -736,6 +743,11 @@ module.exports = {
             type: "number",
             describe:
               "Poll interval in milliseconds for Graph /me/presence when graphPoll is enabled.",
+          },
+          "keepAlwaysOnline": {
+            type: "boolean",
+            describe:
+              "Keep presence as Available even when the system is idle (forces active state reported to Teams and MQTT/tray). Disabled by default; lives under Debug in the menu.",
           },
         },
         applyMode: "restart",
@@ -1106,6 +1118,31 @@ module.exports = {
             type: "boolean",
             describe:
               "Opt-in flag for the single-window multi-account profile switcher; mutually exclusive with auth.intune.enabled.",
+          },
+        },
+        applyMode: "restart",
+      },
+      extensions: {
+        default: {
+          enabled: false,
+          allowUnpacked: true,
+          preload: [],
+        },
+        describe:
+          "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Requires restart.",
+        type: "object",
+        fields: {
+          "enabled": {
+            type: "boolean",
+            describe: "Master flag for Chromium extension support (off by default).",
+          },
+          "allowUnpacked": {
+            type: "boolean",
+            describe: "Allow loading unpacked extensions via the Extensions manager.",
+          },
+          "preload": {
+            type: "array",
+            describe: "Absolute paths to unpacked extension directories loaded at startup.",
           },
         },
         applyMode: "restart",

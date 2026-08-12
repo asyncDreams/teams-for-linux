@@ -16,8 +16,8 @@ class NotificationToast {
       focusable: false,
       frame: false,
       fullscreenable: false,
-      height: 110,
-      width: 360,
+      height: 132,
+      width: 380,
       minimizable: false,
       movable: false,
       resizable: false,
@@ -64,6 +64,11 @@ class NotificationToast {
     if (this.#window && !this.#window.isDestroyed()) {
       this.#window.close();
     }
+  }
+
+  setData(data) {
+    if (!this.#window || this.#window.isDestroyed()) return;
+    this.#window.webContents.send('notification-toast-init', data);
   }
 
   #clearAutoClose() {

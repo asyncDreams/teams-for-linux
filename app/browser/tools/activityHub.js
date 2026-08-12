@@ -69,6 +69,7 @@ class ActivityHub {
 
         // Still start authentication monitoring even if React connection failed
         this._startAuthenticationMonitoring();
+        // keepAlwaysOnline is wired by preload after config arrives (see preload get-config sync)
       }
     }, 10000);
   }
@@ -119,6 +120,15 @@ class ActivityHub {
     }
   }
 
+  _keepOnlineInterval = null;
+  startKeepOnline(config) {
+    if (!config?.presence?.keepAlwaysOnline) return;
+    if (this._keepOnlineInterval) return;
+    this._keepOnlineInterval = setInterval(() => { try { this.setMachineState(1); } catch {} }, 60 * 1000);
+    try { this.setMachineState(1); } catch {}
+  }
+  stopKeepOnline() { if (this._keepOnlineInterval) { clearInterval(this._keepOnlineInterval); this._keepOnlineInterval = null; } }
+  initKeepAlwaysOnline(config) { try { this.startKeepOnline(config); } catch {} }
   setUserStatus(status) {
     const teams2IdleTracker = ReactHandler.getTeams2IdleTracker();
     if (teams2IdleTracker) {
