@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('extensionsApi', {
+  state: () => ipcRenderer.invoke('extension-state'),
   list: () => ipcRenderer.invoke('extension-list'),
   details: (id) => ipcRenderer.invoke('extension-details', { id }),
   installCrx: (filePath) => ipcRenderer.invoke('extension-install-crx', { path: filePath }),

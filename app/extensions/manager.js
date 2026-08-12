@@ -16,8 +16,8 @@ const {
   readManifest,
   validateManifest,
 } = require('./crx');
+const ExtensionRegistry = require('./registry');
 
-const METADATA_VERSION = 1;
 const MAX_RECORDS = 100;
 const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 
@@ -36,6 +36,7 @@ class ExtensionManager {
   #session = null;
   #extensionRoot;
   #metadataPath;
+  #registry;
   #managerWindow = null;
   #registered = false;
 
@@ -44,6 +45,7 @@ class ExtensionManager {
     this.#settingsStore = settingsStore;
     this.#extensionRoot = path.join(app.getPath('userData'), 'extensions');
     this.#metadataPath = path.join(this.#extensionRoot, 'metadata.json');
+    this.#registry = new ExtensionRegistry(this.#metadataPath, this.#settingsStore);
   }
 
   async initialize() {
@@ -95,6 +97,7 @@ class ExtensionManager {
     this.#registered = true;
 
     // Extension manager list/read operations are intentionally limited to metadata.
+    ipcMain.handle('extension-state', async () => this.state());
     ipcMain.handle('extension-list', async () => this.list());
     ipcMain.handle('extension-details', async (_event, payload) => this.details(payload?.id));
     ipcMain.handle('extension-load-unpacked', async (_event, payload) => {
@@ -119,14 +122,8 @@ class ExtensionManager {
       this.#assertEnabled();
       return this.#pickCrx();
     });
-    ipcMain.handle('extension-remove', async (_event, payload) => {
-      this.#assertEnabled();
-      return this.remove(payload?.id);
-    });
-    ipcMain.handle('extension-set-enabled', async (_event, payload) => {
-      this.#assertEnabled();
-      return this.setEnabled(payload?.id, payload?.enabled);
-    });
+    ipcMain.handle('extension-remove', async (_event, payload) => this.remove(payload?.id));
+    ipcMain.handle('extension-set-enabled', async (_event, payload) => this.setEnabled(payload?.id, payload?.enabled));
     ipcMain.handle('extension-reload', async (_event, payload) => {
       this.#assertEnabled();
       return this.reload(payload?.id);
@@ -171,24 +168,7 @@ class ExtensionManager {
   }
 
   #loadPersistedRecords() {
-    let records = [];
-    try {
-      if (fs.existsSync(this.#metadataPath)) {
-        const parsed = JSON.parse(fs.readFileSync(this.#metadataPath, 'utf8'));
-        records = Array.isArray(parsed) ? parsed : parsed?.extensions;
-      }
-    } catch {
-      console.warn('[Extensions] Metadata could not be read; starting with an empty registry');
-    }
-    if (!Array.isArray(records)) {
-      try {
-        const legacy = this.#settingsStore?.get('extensions.installed', []);
-        records = Array.isArray(legacy) ? legacy : [];
-      } catch {
-        records = [];
-      }
-    }
-    for (const record of records.slice(0, MAX_RECORDS)) {
+    for (const record of this.#registry.load()) {
       const normalized = normalizeRecord(record);
       if (normalized) this.#loaded.set(normalized.id, normalized);
     }
@@ -310,6 +290,7 @@ class ExtensionManager {
       this.#persist();
       return this.#publicRecord(record);
     }
+    this.#assertEnabled();
     if (!fs.existsSync(record.path)) throw new Error('Extension path no longer exists');
     const manifest = readManifest(record.path);
     const extension = await this.#getSession().loadExtension(record.path, { allowFileAccess: true });
@@ -332,6 +313,15 @@ class ExtensionManager {
     this.#replaceRecord(record.id, replacement);
     this.#persist();
     return this.#publicRecord(replacement);
+  }
+
+  state() {
+    return {
+      enabled: this.#config?.extensions?.enabled === true,
+      allowCrx: this.#config?.extensions?.allowCrx !== false,
+      allowUnpacked: this.#config?.extensions?.allowUnpacked !== false,
+      developerMode: this.#config?.extensions?.developerMode === true,
+    };
   }
 
   list() {
@@ -377,10 +367,7 @@ class ExtensionManager {
   #persist() {
     const records = Array.from(this.#loaded.values()).slice(0, MAX_RECORDS);
     try {
-      const temporary = `${this.#metadataPath}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify({ version: METADATA_VERSION, extensions: records }, null, 2), { mode: 0o600 });
-      fs.renameSync(temporary, this.#metadataPath);
-      this.#settingsStore?.set('extensions.installed', records);
+      this.#registry.save(records);
     } catch (error) {
       console.warn('[Extensions] Metadata persistence failed', { message: error.message });
     }

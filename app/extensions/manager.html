@@ -17,11 +17,11 @@ h1{font-size:24px;letter-spacing:-.02em;margin:0}.eyebrow{color:var(--accent);fo
 </head>
 <body>
 <header><div><div class="eyebrow">Teams for Linux</div><h1>Extensions</h1></div><div class="actions"><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
-<div class="notice">Extensions are optional and disabled by default. CRX files are validated before being copied to your local profile. Otter.ai can be installed here if its downloaded extension is supplied as a CRX or unpacked folder.</div>
+<div id="notice" class="notice">Extensions are optional and disabled by default. CRX files are validated before being copied to your local profile. Otter.ai can be installed here if its downloaded extension is supplied as a CRX or unpacked folder.</div>
 <div class="toolbar"><input id="search" type="search" placeholder="Search installed extensions" autocomplete="off"><span id="count" class="count"></span></div>
 <div id="status" class="status" role="status" aria-live="polite"></div><main id="extensions" class="grid"></main>
 <script>
-const state={items:[],query:""};
+const state={items:[],query:"",config:{enabled:false,allowCrx:false,allowUnpacked:false,developerMode:false}};
 const byId=(id)=>document.getElementById(id);
 function setStatus(message){byId("status").textContent=message||"";}
 function text(value){return value==null?"":String(value);}
@@ -39,16 +39,27 @@ function card(item){
   if(item.iconPath){const image=document.createElement("img");image.src=`file://${item.iconPath}`;image.alt="";image.onerror=()=>image.remove();icon.textContent="";icon.appendChild(image);}
   const info=document.createElement("div");info.style.flex="1";const name=document.createElement("div");name.className="name";name.textContent=item.name||"Extension";
   const badge=document.createElement("span");badge.className="badge";badge.textContent=item.enabled?"Enabled":"Disabled";name.appendChild(badge);
-  const meta=document.createElement("div");meta.className="meta";meta.textContent=`Version ${item.version||"?"} · ${item.source||"unpacked"}`;info.append(name,meta);top.append(icon,info);
+  const meta=document.createElement("div");meta.className="meta";meta.textContent=`Version ${item.version||"?"} · ${item.source||"unpacked"}`;
+  const description=document.createElement("div");description.className="meta";description.textContent=item.description||"No description provided.";
+  const permissions=document.createElement("div");permissions.className="meta";permissions.textContent=`Permissions: ${(item.permissions||[]).join(", ")||"none declared"}`;info.append(name,meta,description,permissions);top.append(icon,info);
   const toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=item.enabled;toggle.title="Enable extension";toggle.addEventListener("change",()=>run(()=>window.extensionsApi.setEnabled(item.id,toggle.checked)).then(refresh).catch(()=>{toggle.checked=!toggle.checked;}));top.append(toggle);card.appendChild(top);
   const actions=document.createElement("div");actions.className="card-actions";
-  for(const [label,handler] of [["Details",()=>toggleDetails(card,item.id)],["Reload",()=>run(()=>window.extensionsApi.reload(item.id)).then(refresh)], ["Open folder",()=>run(()=>window.extensionsApi.openFolder(item.id))],["Export metadata",()=>run(()=>window.extensionsApi.exportMetadata(item.id))]]){const button=document.createElement("button");button.textContent=label;button.addEventListener("click",()=>handler().catch((error)=>setStatus(error.message||String(error))));actions.appendChild(button);}
+  const actionDefinitions=[["Details",()=>toggleDetails(card,item.id)],["Reload",()=>run(()=>window.extensionsApi.reload(item.id)).then(refresh)]];
+  if(state.config.developerMode){actionDefinitions.push(["Open folder",()=>run(()=>window.extensionsApi.openFolder(item.id))],["Export metadata",()=>run(()=>window.extensionsApi.exportMetadata(item.id))]);}
+  for(const [label,handler] of actionDefinitions){const button=document.createElement("button");button.textContent=label;button.addEventListener("click",()=>handler().catch((error)=>setStatus(error.message||String(error))));actions.appendChild(button);}
   const remove=document.createElement("button");remove.className="danger";remove.textContent="Remove";remove.addEventListener("click",async()=>{if(confirm(`Remove ${item.name||"this extension"}?`)){await run(()=>window.extensionsApi.remove(item.id));await refresh();}});actions.appendChild(remove);card.appendChild(actions);
   const details=document.createElement("div");details.className="details";details.dataset.details=item.id;card.appendChild(details);return card;
 }
 async function toggleDetails(card,id){const panel=card.querySelector(".details");if(panel.classList.toggle("open")&&!panel.dataset.loaded){const details=await run(()=>window.extensionsApi.details(id));const pre=document.createElement("pre");pre.textContent=JSON.stringify(details.manifest||details,null,2);panel.appendChild(pre);panel.dataset.loaded="true";}}
 async function run(operation){setStatus("");try{return await operation();}catch(error){setStatus(error&&error.message||String(error));throw error;}}
-async function refresh(){state.items=await run(()=>window.extensionsApi.list())||[];render();}
+async function refresh(){
+  state.config=await run(()=>window.extensionsApi.state())||state.config;
+  state.items=await run(()=>window.extensionsApi.list())||[];
+  byId("install").disabled=!(state.config.enabled&&state.config.allowCrx);
+  byId("unpacked").disabled=!(state.config.enabled&&state.config.allowUnpacked);
+  if(!state.config.enabled)byId("notice").textContent="Extension support is disabled. Set extensions.enabled=true and restart to install or enable extensions.";
+  render();
+}
 byId("install").addEventListener("click",()=>run(()=>window.extensionsApi.pickCrx()).then(refresh).catch(()=>{}));
 byId("unpacked").addEventListener("click",()=>run(()=>window.extensionsApi.pickUnpacked()).then(refresh).catch(()=>{}));
 byId("search").addEventListener("input",(event)=>{state.query=event.target.value;render();});
