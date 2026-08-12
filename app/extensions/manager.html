@@ -5,6 +5,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Extensions</title>
+<link rel="stylesheet" href="../assets/css/fluent-parity.css">
 <style>
 :root{font-family:"Segoe UI",system-ui,sans-serif;color:#242424;background:#f7f7fb;--accent:#5b5bd6;--border:#dedee8;--muted:#61616e}
 *{box-sizing:border-box}body{margin:0;padding:24px;min-width:560px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
@@ -16,7 +17,7 @@ h1{font-size:24px;letter-spacing:-.02em;margin:0}.eyebrow{color:var(--accent);fo
 </style>
 </head>
 <body>
-<header><div><div class="eyebrow">Teams for Linux</div><h1>Extensions</h1></div><div class="actions"><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
+<header><div><div class="eyebrow">Teams for Linux</div><h1><img src="../assets/icons/tfl-collab.svg" alt="" style="width:28px;height:28px;vertical-align:-5px;margin-right:7px">Extensions</h1></div><div class="actions"><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
 <div id="notice" class="notice">Extensions are optional and disabled by default. CRX files are validated before being copied to your local profile. Otter.ai can be installed here if its downloaded extension is supplied as a CRX or unpacked folder.</div>
 <div class="toolbar"><input id="search" type="search" placeholder="Search installed extensions" autocomplete="off"><span id="count" class="count"></span></div>
 <div id="status" class="status" role="status" aria-live="polite"></div><main id="extensions" class="grid"></main>

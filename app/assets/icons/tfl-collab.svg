@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Teams for Linux collaborative mark</title>
+  <desc id="desc">A stylized T with two overlapping conversation circles</desc>
+  <defs>
+    <linearGradient id="ink" x1="24" y1="20" x2="228" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6B6FE8"/>
+      <stop offset="1" stop-color="#2B8AC6"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#ink)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="24" d="M56 62h112M112 62v122"/>
+    <path stroke-width="12" d="M174 75c25 0 45 17 45 39s-20 39-45 39c-7 0-14-1-20-4l-17 12 4-21c-8-7-12-16-12-26 0-22 20-39 45-39Z"/>
+    <path stroke-width="10" d="M74 157c-20 0-36 13-36 30 0 9 5 17 12 22l-3 15 14-10c4 2 8 3 13 3 20 0 36-13 36-30s-16-30-36-30Z" opacity=".82"/>
+  </g>
+</svg>
