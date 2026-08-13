@@ -1260,6 +1260,10 @@ module.exports = {
           allowCrx: true,
           developerMode: false,
           preload: [],
+          identityShim: {
+            enabled: false,
+            allowedRedirectHosts: ["chromiumapp.org"],
+          },
         },
         describe:
           "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. allowCrx: offer CRX installation after validation. developerMode: show advanced manifest and developer actions in the manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Installed CRX files are copied under <userData>/extensions and restored after restart. Requires restart for preload changes.",
@@ -1284,6 +1288,14 @@ module.exports = {
           "preload": {
             type: "array",
             describe: "Absolute paths to unpacked extension directories loaded at startup.",
+          },
+          "identityShim.enabled": {
+            type: "boolean",
+            describe: "Patch chrome.identity.launchWebAuthFlow and chrome.tabs.create on extension popup/options pages so OAuth sign-in flows can complete (off by default).",
+          },
+          "identityShim.allowedRedirectHosts": {
+            type: "array",
+            describe: "HTTPS hosts allowed as chrome.identity redirect targets (e.g. chromiumapp.org).",
           },
         },
         applyMode: "restart",

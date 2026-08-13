@@ -21,6 +21,11 @@ const {
   getOptionsPage,
   getPopupPath,
 } = require('./manifest');
+const {
+  buildShimSource,
+  isAuthorizedRedirect,
+  isValidAuthUrl,
+} = require('./identityShim');
 const ExtensionRegistry = require('./registry');
 
 const MAX_RECORDS = 100;
@@ -149,6 +154,19 @@ class ExtensionManager {
     ipcMain.handle('extension-open-popup', async (_event, payload) => this.openPopup(payload?.id));
     // Open the extension options page declared by options_ui/options_page.
     ipcMain.handle('extension-open-options', async (_event, payload) => this.openOptions(payload?.id));
+    // chrome.identity.launchWebAuthFlow shim: runs a popup OAuth flow and returns
+    // the redirect URL. Only reachable from extension windows carrying the shim.
+    ipcMain.handle('extension-identity-launch-web-auth-flow', async (_event, details) => {
+      this.#assertEnabled();
+      this.#assertIdentityShimEnabled();
+      return this.#launchWebAuthFlow(details);
+    });
+    // chrome.tabs.create shim: opens an https URL externally.
+    ipcMain.handle('extension-tabs-create', async (_event, details) => {
+      this.#assertEnabled();
+      this.#assertIdentityShimEnabled();
+      return this.#tabsCreate(details);
+    });
     ipcMain.handle('extension-export-metadata', async (_event, payload) => {
       this.#assertEnabled();
       return this.#exportMetadata(payload?.id);
@@ -165,6 +183,26 @@ class ExtensionManager {
     if (this.#config?.extensions?.enabled !== true) {
       throw new Error('Chromium extensions are disabled by config');
     }
+  }
+
+  #identityShimEnabled() {
+    return this.#config?.extensions?.identityShim?.enabled === true;
+  }
+
+  #assertIdentityShimEnabled() {
+    if (!this.#identityShimEnabled()) {
+      throw new Error('The chrome.identity/tabs shim is disabled by config');
+    }
+  }
+
+  #identityShimConfig() {
+    const shim = this.#config?.extensions?.identityShim || {};
+    return {
+      enabled: shim.enabled === true,
+      allowedRedirectHosts: Array.isArray(shim.allowedRedirectHosts)
+        ? shim.allowedRedirectHosts.map(String)
+        : [],
+    };
   }
 
   #getSession() {
@@ -337,6 +375,7 @@ class ExtensionManager {
     const url = extensionPageUrl(record.id, relPath);
     if (!url) throw new Error('Invalid extension page path');
     const partition = this.#config?.partition || 'persist:teams-4-linux';
+    const shimEnabled = this.#identityShimEnabled();
     const window = new BrowserWindow({
       width: dimensions.width,
       height: dimensions.height,
@@ -346,10 +385,91 @@ class ExtensionManager {
         partition,
         nodeIntegration: false,
         contextIsolation: true,
+        preload: shimEnabled ? path.join(__dirname, 'identityPreload.js') : undefined,
       },
     });
+    if (shimEnabled) {
+      window.webContents.on('did-finish-load', () => {
+        window.webContents.executeJavaScript(buildShimSource()).catch(() => {
+          // The shim is best-effort; an unload race must never break the page.
+        });
+      });
+    }
     window.loadURL(url);
     return window;
+  }
+
+  /**
+   * Runs a popup OAuth flow for chrome.identity.launchWebAuthFlow. Opens the
+   * authorization URL in a window that shares the Teams partition (so existing
+   * SSO cookies apply) and resolves once the provider redirects to the declared
+   * redirect_uri.
+   * @param {object} details { url, redirect_uri, interactive }
+   * @returns {Promise<string>}
+   */
+  #launchWebAuthFlow(details) {
+    const url = typeof details?.url === 'string' ? details.url : null;
+    const redirectUri = typeof details?.redirect_uri === 'string'
+      ? details.redirect_uri
+      : (typeof details?.redirectUri === 'string' ? details.redirectUri : null);
+    if (!isValidAuthUrl(url)) {
+      return Promise.reject(new Error('launchWebAuthFlow requires an https url'));
+    }
+    const { allowedRedirectHosts } = this.#identityShimConfig();
+    const extensionId = Array.from(this.#loaded.values()).find((r) => r.loaded)?.id || null;
+    if (!isAuthorizedRedirect(redirectUri, allowedRedirectHosts, extensionId)) {
+      return Promise.reject(new Error('launchWebAuthFlow redirect_uri is not allowed'));
+    }
+
+    return new Promise((resolve, reject) => {
+      const partition = this.#config?.partition || 'persist:teams-4-linux';
+      const authWindow = new BrowserWindow({
+        width: 520,
+        height: 700,
+        autoHideMenuBar: true,
+        webPreferences: { partition, nodeIntegration: false, contextIsolation: true },
+      });
+      let settled = false;
+      const finish = (targetUrl) => {
+        if (settled) return;
+        settled = true;
+        if (!authWindow.isDestroyed()) authWindow.destroy();
+        resolve(targetUrl);
+      };
+      const fail = (message) => {
+        if (settled) return;
+        settled = true;
+        if (!authWindow.isDestroyed()) authWindow.destroy();
+        reject(new Error(message));
+      };
+      const onRedirect = (event, targetUrl) => {
+        if (typeof targetUrl === 'string' && targetUrl.startsWith(redirectUri)) {
+          event.preventDefault();
+          finish(targetUrl);
+        }
+      };
+      authWindow.webContents.on('will-redirect', onRedirect);
+      authWindow.webContents.on('did-navigate', (_event, targetUrl) => {
+        if (typeof targetUrl === 'string' && targetUrl.startsWith(redirectUri)) finish(targetUrl);
+      });
+      authWindow.on('closed', () => fail('Web auth flow window was closed before completing'));
+      authWindow.loadURL(url).catch((error) => fail(error.message));
+    });
+  }
+
+  /**
+   * Opens a URL from chrome.tabs.create in the system browser. Only https (or
+   * loopback http) is permitted so an extension cannot pivot to a local scheme.
+   * @param {object} details { url }
+   * @returns {Promise<object>}
+   */
+  async #tabsCreate(details) {
+    const url = typeof details?.url === 'string' ? details.url : null;
+    if (!isValidAuthUrl(url)) {
+      throw new Error('tabs.create requires an https url');
+    }
+    await shell.openExternal(url);
+    return { id: Date.now(), windowId: 1 };
   }
 
   async reload(id) {

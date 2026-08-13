@@ -659,6 +659,8 @@ Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor) is opt-
 | `extensions.allowCrx` | `boolean` | `true` | Offer validated CRX installation in the Extensions manager. |
 | `extensions.developerMode` | `boolean` | `false` | Show advanced manifest and developer actions in the Extensions manager. |
 | `extensions.preload` | `array` | `[]` | Absolute paths to unpacked extension directories loaded at startup (one string per extension). |
+| `extensions.identityShim.enabled` | `boolean` | `false` | Patch `chrome.identity.launchWebAuthFlow` and `chrome.tabs.create` on extension popup/options pages so OAuth sign-in flows can complete. |
+| `extensions.identityShim.allowedRedirectHosts` | `array` | `["chromiumapp.org"]` | HTTPS hosts allowed as `chrome.identity` redirect targets. |
 
 > [!NOTE]
 > Installed CRX files are validated and extracted under `<userData>/extensions`, then restored after restart. Use **Teams for Linux → Extensions → Manage Extensions** to install, enable, disable, reload, or remove extensions.

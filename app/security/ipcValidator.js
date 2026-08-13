@@ -186,6 +186,8 @@ const allowedChannels = new Set([
   'extension-open-options',
   'extension-export-metadata',
   'extension-open-manager',
+  'extension-identity-launch-web-auth-flow',
+  'extension-tabs-create',
   'notification-toast-action',
 
   // Persistent notification history center
