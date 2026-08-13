@@ -25,14 +25,17 @@ For a complete, always-up-to-date list of every option generated directly from t
   - [Network & Proxy](#network--proxy)
   - [Screen Sharing](#screen-sharing)
   - [Media Settings](#media-settings)
+  - [Presence & Status](#presence--status)
   - [Virtual Backgrounds](#virtual-backgrounds)
   - [URL & Protocol Handling](#url--protocol-handling)
   - [Keyboard Shortcuts](#keyboard-shortcuts)
   - [MQTT Integration](#mqtt-integration)
   - [Microsoft Graph API](#microsoft-graph-api)
   - [Quick Chat](#quick-chat)
+  - [Extensions](#extensions)
   - [Performance & Hardware](#performance--hardware)
   - [Wayland](#wayland)
+  - [Linux Desktop Integration](#linux-desktop-integration)
   - [Cache & Storage](#cache--storage)
   - [Development & Debug](#development--debug)
   - [Advanced Platform Options](#advanced-platform-options)
@@ -140,6 +143,12 @@ Each option's **Apply** mode (whether a change takes effect immediately or after
 | `defaultNotificationUrgency` | `string` | `"normal"` | Default urgency for new notifications. Choices: `low`, `normal`, `critical` |
 | `notifications.timeoutType` | `string` | `"default"` | How long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification `timeoutType`. May not be honoured by every notification daemon. |
 | `notifications.electron.clickAction` | `string` | `"show"` | What clicking a notification does to the main window (`notificationMethod: "electron"` only). Choices: `show` (reveal the window, current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). On Linux whether focus is honoured depends on the window manager. |
+| `notifications.grouping` | `boolean` | `false` | Coalesce notifications by conversation/channel via notification tag (same conversation replaces the previous toast). |
+| `notifications.actions` | `boolean` | `false` | Show actionable buttons (Reply / Mark as read / Open / Join) on Electron notifications where the platform supports them. |
+| `notifications.avatar` | `boolean` | `false` | Fetch and display the sender avatar in notifications when available (payload icon or Graph People photo). |
+| `notifications.suppressInApp` | `boolean` | `true` | Hide Teams' built-in in-app toast/banner when an OS notification is shown, preventing the double-toast effect. |
+| `notifications.history.enabled` | `boolean` | `false` | Persist a local notification timeline and expose it through View → Notification History. |
+| `notifications.history.retentionDays` | `number` | `30` | Notification history retention: `7`, `30`, or `90` days; `0` keeps entries until manually cleared. |
 
 ### Incoming Call Handling
 
@@ -615,6 +624,57 @@ All topics use retained messages by default, ensuring subscribers receive the la
 
 > [!NOTE]
 > Quick Chat requires Graph API to be enabled (`graphApi.enabled: true`) for contact search and inline messaging. The modal allows you to search for contacts, click to compose a message, and send it directly without leaving your current context. The keyboard shortcut uses Electron accelerator format. No shortcut is registered by default; you must provide one explicitly.
+
+### Presence & Status
+
+Presence behavior is configured under the `presence` object. All of it is disabled by default.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `presence.keepAlwaysOnline` | `boolean` | `false` | Legacy alias for `keepAlwaysOnlineMode: "always"`, kept for existing configuration files. |
+| `presence.keepAlwaysOnlineMode` | `string` | `"disabled"` | Presence preservation mode. Choices: `disabled`, `always`, `business-hours`. |
+| `presence.businessHours.enabled` | `boolean` | `false` | Enable the configured business-hours schedule when mode is `business-hours`. |
+| `presence.businessHours.startTime` | `string` | `"09:00"` | Business-hours start in 24-hour `HH:mm` format. |
+| `presence.businessHours.endTime` | `string` | `"17:00"` | Business-hours end in 24-hour `HH:mm` format; overnight windows are supported. |
+| `presence.businessHours.weekdays` | `array` | `[1,2,3,4,5]` | ISO weekdays (1 Monday … 7 Sunday) enabled for business-hours mode. |
+| `presence.businessHours.timezone` | `string` | `""` | IANA timezone for the schedule; empty uses the operating-system timezone. |
+| `presence.smartPresence` | `boolean` | `false` | Yield keep-online activity injection while in a meeting/call, presenting, DND, or explicit Busy. |
+| `presence.sync.enabled` | `boolean` | `false` | Enable unified presence reconciliation across Teams DOM, Graph, meeting, presentation, and optional calendar signals. |
+| `presence.sync.debounceMs` | `number` | `400` | Debounce conflicting provider transitions in milliseconds. |
+| `presence.sync.providerTtlMs` | `number` | `120000` | How long a provider result remains active before it expires. |
+| `presence.sync.calendar.enabled` | `boolean` | `false` | Poll the Graph calendar as an optional presence provider (requires Graph API access). |
+| `presence.sync.calendar.preBusy` | `boolean` | `false` | Derive Busy shortly before an upcoming calendar event. |
+| `presence.sync.calendar.reminderMinutes` | `number` | `5` | Pre-busy lead time in minutes. |
+| `presence.graphPoll.enabled` | `boolean` | `false` | Poll Graph `/me/presence` as a correction layer (requires `graphApi.enabled` and Presence.Read consent). |
+| `presence.graphPoll.intervalMs` | `number` | `60000` | Graph presence poll interval in milliseconds. |
+
+### Extensions
+
+Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor) is opt-in and disabled by default.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `extensions.enabled` | `boolean` | `false` | Master switch for Chromium extension support. |
+| `extensions.allowUnpacked` | `boolean` | `true` | Offer "Load unpacked" in the Extensions manager. |
+| `extensions.allowCrx` | `boolean` | `true` | Offer validated CRX installation in the Extensions manager. |
+| `extensions.developerMode` | `boolean` | `false` | Show advanced manifest and developer actions in the Extensions manager. |
+| `extensions.preload` | `array` | `[]` | Absolute paths to unpacked extension directories loaded at startup (one string per extension). |
+
+> [!NOTE]
+> Installed CRX files are validated and extracted under `<userData>/extensions`, then restored after restart. Use **Teams for Linux → Extensions → Manage Extensions** to install, enable, disable, reload, or remove extensions.
+
+### Linux Desktop Integration
+
+Linux desktop integration is configured under the `linux` object.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `linux.waylandMode` | `string` | `"auto"` | Wayland handling: `auto` detects the session, `enabled` forces Wayland integration, `disabled` uses the legacy path. |
+| `linux.portal.enabled` | `boolean` | `true` | Prefer xdg-desktop-portal/PipeWire for screen sharing when the session supports it. |
+| `linux.mediaControls.enabled` | `boolean` | `false` | Expose Linux media/call controls through the desktop integration bridge. |
+
+> [!NOTE]
+> The legacy `wayland.mode` and `wayland.portal.enabled` aliases remain supported. See [Wayland](#wayland) and [Screen Sharing](#screen-sharing).
 
 ### Performance & Hardware
 
