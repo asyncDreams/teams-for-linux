@@ -23,8 +23,10 @@ const {
 } = require('./manifest');
 const {
   buildShimSource,
+  extensionIdFromUrl,
   isAuthorizedRedirect,
   isValidAuthUrl,
+  redirectMatches,
 } = require('./identityShim');
 const ExtensionRegistry = require('./registry');
 
@@ -50,6 +52,7 @@ class ExtensionManager {
   #registry;
   #managerWindow = null;
   #registered = false;
+  #shimDiagnostics = [];
 
   constructor(config, settingsStore, legacyConfigStore = null) {
     this.#config = config;
@@ -156,10 +159,19 @@ class ExtensionManager {
     ipcMain.handle('extension-open-options', async (_event, payload) => this.openOptions(payload?.id));
     // chrome.identity.launchWebAuthFlow shim: runs a popup OAuth flow and returns
     // the redirect URL. Only reachable from extension windows carrying the shim.
-    ipcMain.handle('extension-identity-launch-web-auth-flow', async (_event, details) => {
+    ipcMain.handle('extension-identity-launch-web-auth-flow', async (event, details) => {
       this.#assertEnabled();
       this.#assertIdentityShimEnabled();
-      return this.#launchWebAuthFlow(details);
+      const extensionId = extensionIdFromSender(event) || null;
+      return this.#launchWebAuthFlow(details, extensionId);
+    });
+    // Fire-and-forget diagnostics from the shim on extension pages; the message
+    // is a fixed API name (never a URL or payload) so it is safe to log.
+    ipcMain.on('extension-shim-report', (_event, payload) => {
+      const message = typeof payload?.message === 'string' ? payload.message.slice(0, 120) : null;
+      if (!message) return;
+      this.#recordShimDiagnostic(message);
+      console.info('[Extensions] shim event', { event: message });
     });
     // chrome.tabs.create shim: opens an https URL externally.
     ipcMain.handle('extension-tabs-create', async (_event, details) => {
@@ -405,19 +417,24 @@ class ExtensionManager {
    * SSO cookies apply) and resolves once the provider redirects to the declared
    * redirect_uri.
    * @param {object} details { url, redirect_uri, interactive }
+   * @param {string|null} extensionId id of the calling extension (from sender)
    * @returns {Promise<string>}
    */
-  #launchWebAuthFlow(details) {
+  #launchWebAuthFlow(details, extensionId = null) {
     const url = typeof details?.url === 'string' ? details.url : null;
     const redirectUri = typeof details?.redirect_uri === 'string'
       ? details.redirect_uri
       : (typeof details?.redirectUri === 'string' ? details.redirectUri : null);
     if (!isValidAuthUrl(url)) {
+      this.#recordShimDiagnostic('launchWebAuthFlow rejected (invalid url)');
       return Promise.reject(new Error('launchWebAuthFlow requires an https url'));
     }
     const { allowedRedirectHosts } = this.#identityShimConfig();
-    const extensionId = Array.from(this.#loaded.values()).find((r) => r.loaded)?.id || null;
-    if (!isAuthorizedRedirect(redirectUri, allowedRedirectHosts, extensionId)) {
+    const resolvedExtensionId = extensionId
+      || Array.from(this.#loaded.values()).find((r) => r.loaded)?.id
+      || null;
+    if (!isAuthorizedRedirect(redirectUri, allowedRedirectHosts, resolvedExtensionId)) {
+      this.#recordShimDiagnostic('launchWebAuthFlow rejected (redirect not allowed)');
       return Promise.reject(new Error('launchWebAuthFlow redirect_uri is not allowed'));
     }
 
@@ -443,14 +460,14 @@ class ExtensionManager {
         reject(new Error(message));
       };
       const onRedirect = (event, targetUrl) => {
-        if (typeof targetUrl === 'string' && targetUrl.startsWith(redirectUri)) {
+        if (redirectMatches(redirectUri, targetUrl)) {
           event.preventDefault();
           finish(targetUrl);
         }
       };
       authWindow.webContents.on('will-redirect', onRedirect);
       authWindow.webContents.on('did-navigate', (_event, targetUrl) => {
-        if (typeof targetUrl === 'string' && targetUrl.startsWith(redirectUri)) finish(targetUrl);
+        if (redirectMatches(redirectUri, targetUrl)) finish(targetUrl);
       });
       authWindow.on('closed', () => fail('Web auth flow window was closed before completing'));
       authWindow.loadURL(url).catch((error) => fail(error.message));
@@ -540,6 +557,10 @@ class ExtensionManager {
       allowCrx: this.#config?.extensions?.allowCrx !== false,
       allowUnpacked: this.#config?.extensions?.allowUnpacked !== false,
       developerMode: this.#config?.extensions?.developerMode === true,
+      identityShim: {
+        enabled: this.#identityShimEnabled(),
+        diagnostics: this.#shimDiagnostics.slice(),
+      },
     };
   }
 
@@ -561,6 +582,11 @@ class ExtensionManager {
     if (result.canceled || !result.filePath) return { canceled: true };
     fs.writeFileSync(result.filePath, `${JSON.stringify(this.#publicRecord(record, true), null, 2)}\n`, { mode: 0o600 });
     return { canceled: false, path: result.filePath };
+  }
+
+  #recordShimDiagnostic(message) {
+    this.#shimDiagnostics.push(String(message).slice(0, 120));
+    if (this.#shimDiagnostics.length > 20) this.#shimDiagnostics.shift();
   }
 
   #getRecord(id) {
@@ -645,6 +671,27 @@ class ExtensionManager {
   #showError(error) {
     dialog.showErrorBox('Extension installation failed', error?.message || 'Unable to install the extension');
   }
+}
+
+/**
+ * Resolves the extension id of the frame that issued an IPC request, using the
+ * sender frame URL and falling back to the sender WebContents URL. Returns null
+ * when the sender is not an extension page.
+ * @param {object} event Electron IpcMainEvent
+ * @returns {string|null}
+ */
+function extensionIdFromSender(event) {
+  const frameUrl = event?.senderFrame?.url;
+  if (typeof frameUrl === 'string') {
+    const id = extensionIdFromUrl(frameUrl);
+    if (id) return id;
+  }
+  const sender = event?.sender;
+  if (sender && typeof sender.getURL === 'function') {
+    const id = extensionIdFromUrl(sender.getURL());
+    if (id) return id;
+  }
+  return null;
 }
 
 function normalizeRecord(record) {

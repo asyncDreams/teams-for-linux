@@ -19,6 +19,7 @@ h1{font-size:24px;letter-spacing:-.02em;margin:0}.eyebrow{color:var(--accent);fo
 <body>
 <header><div><div class="eyebrow">Teams for Linux</div><h1><img src="../assets/icons/tfl-collab.svg" alt="" style="width:28px;height:28px;vertical-align:-5px;margin-right:7px">Extensions</h1></div><div class="actions"><label id="master-toggle-wrap" class="master-toggle"><input id="master-toggle" type="checkbox"><span>Enable extensions</span></label><button id="install" class="primary">Install CRX…</button><button id="unpacked">Load unpacked…</button></div></header>
 <div id="notice" class="notice">Extensions are optional and disabled by default. Turn on the toggle to enable the extension session; CRX files are validated before being copied to your local profile.</div>
+<div id="shim" class="notice" hidden></div>
 <div class="toolbar"><input id="search" type="search" placeholder="Search installed extensions" autocomplete="off"><span id="count" class="count"></span></div>
 <div id="status" class="status" role="status" aria-live="polite"></div><main id="extensions" class="grid"></main>
 <script>
@@ -69,6 +70,16 @@ async function refresh(){
   byId("notice").textContent=state.config.enabled
     ? "Extension support is enabled. Install Otter.ai or another validated Chromium extension from this window."
     : "Extension support is disabled. Turn on Enable extensions to install or enable extensions.";
+  const shim=state.config.identityShim||{enabled:false,diagnostics:[]};
+  const shimEl=byId("shim");
+  if(shim.enabled){
+    let text="chrome.identity shim enabled \u2014 open an extension's Popup and click Sign in.";
+    if(shim.diagnostics&&shim.diagnostics.length){text+=" Last events: "+shim.diagnostics.slice(-5).join(" \u00b7 ");}
+    shimEl.textContent=text;
+    shimEl.hidden=false;
+  }else{
+    shimEl.hidden=true;
+  }
   render();
 }
 byId("master-toggle").addEventListener("change",async(event)=>{

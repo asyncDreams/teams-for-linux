@@ -4,8 +4,10 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildShimSource,
+  extensionIdFromUrl,
   isAuthorizedRedirect,
   isValidAuthUrl,
+  redirectMatches,
 } = require('../../app/extensions/identityShim');
 
 describe('isValidAuthUrl', () => {
@@ -28,8 +30,12 @@ describe('isValidAuthUrl', () => {
 });
 
 describe('isAuthorizedRedirect', () => {
-  it('accepts the default chromiumapp.org host and subdomains', () => {
+  it('accepts the stock <id>.chromiumapp.org redirect for the calling extension', () => {
     assert.equal(isAuthorizedRedirect('https://abcd.chromiumapp.org/callback', ['chromiumapp.org'], 'abcd'), true);
+  });
+
+  it('rejects a chromiumapp.org redirect for a different extension id', () => {
+    assert.equal(isAuthorizedRedirect('https://abcd.chromiumapp.org/callback', ['chromiumapp.org'], 'dcba'), false);
   });
 
   it('accepts the calling extension chrome-extension origin', () => {
@@ -41,15 +47,56 @@ describe('isAuthorizedRedirect', () => {
     assert.equal(isAuthorizedRedirect('chrome-extension://dcba/callback', ['chromiumapp.org'], 'abcd'), false);
     assert.equal(isAuthorizedRedirect('not a url', ['chromiumapp.org'], 'abcd'), false);
   });
+
+  it('accepts a configured allow-listed host and its subdomains', () => {
+    assert.equal(isAuthorizedRedirect('https://oauth.otter.ai/cb', ['otter.ai'], null), true);
+    assert.equal(isAuthorizedRedirect('https://id.otter.ai/cb', ['otter.ai'], null), true);
+  });
+});
+
+describe('extensionIdFromUrl', () => {
+  it('extracts a valid extension id from a chrome-extension URL', () => {
+    assert.equal(extensionIdFromUrl('chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup.html'), 'abcdefghijklmnopabcdefghijklmnop');
+  });
+
+  it('returns null for non-extension or malformed URLs', () => {
+    assert.equal(extensionIdFromUrl('https://teams.cloud.microsoft/'), null);
+    assert.equal(extensionIdFromUrl('chrome-extension://not-an-id/popup.html'), null);
+    assert.equal(extensionIdFromUrl('not a url'), null);
+    assert.equal(extensionIdFromUrl(null), null);
+  });
+});
+
+describe('redirectMatches', () => {
+  const redirectUri = 'https://abcd.chromiumapp.org/oauth2';
+  it('matches the exact path and tolerates query/fragment', () => {
+    assert.equal(redirectMatches(redirectUri, 'https://abcd.chromiumapp.org/oauth2?code=123#frag'), true);
+  });
+  it('tolerates a trailing slash on the declared redirect', () => {
+    assert.equal(redirectMatches(`${redirectUri}/`, 'https://abcd.chromiumapp.org/oauth2'), true);
+  });
+  it('ignores host case', () => {
+    assert.equal(redirectMatches('https://Abcd.ChromiumApp.org/oauth2', 'https://abcd.chromiumapp.org/oauth2'), true);
+  });
+  it('rejects a different host or a sibling path', () => {
+    assert.equal(redirectMatches(redirectUri, 'https://evil.example.com/oauth2'), false);
+    assert.equal(redirectMatches(redirectUri, 'https://abcd.chromiumapp.org/other'), false);
+  });
+  it('matches chrome-extension redirects', () => {
+    assert.equal(redirectMatches('chrome-extension://abcd/callback', 'chrome-extension://abcd/callback?code=1'), true);
+  });
 });
 
 describe('buildShimSource', () => {
-  it('installs both launchWebAuthFlow and tabs.create', () => {
+  it('installs launchWebAuthFlow, tabs.create, getAuthToken, and runtime instrumentation', () => {
     const source = buildShimSource();
     assert.equal(typeof source, 'string');
     assert.match(source, /launchWebAuthFlow/);
     assert.match(source, /tabsCreate/);
+    assert.match(source, /getAuthToken/);
+    assert.match(source, /runtime\.sendMessage/);
     assert.match(source, /chrome\.identity/);
     assert.match(source, /chrome\.tabs/);
+    assert.match(source, /report/);
   });
 });
