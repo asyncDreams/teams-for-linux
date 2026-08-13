@@ -42,10 +42,15 @@ function card(item){
   const badge=document.createElement("span");badge.className="badge";badge.textContent=item.enabled?"Enabled":"Disabled";name.appendChild(badge);
   const meta=document.createElement("div");meta.className="meta";meta.textContent=`Version ${item.version||"?"} · ${item.source||"unpacked"}`;
   const description=document.createElement("div");description.className="meta";description.textContent=item.description||"No description provided.";
-  const permissions=document.createElement("div");permissions.className="meta";permissions.textContent=`Permissions: ${(item.permissions||[]).join(", ")||"none declared"}`;info.append(name,meta,description,permissions);top.append(icon,info);
+  const permissions=document.createElement("div");permissions.className="meta";permissions.textContent=`Permissions: ${(item.permissions||[]).join(", ")||"none declared"}`;info.append(name,meta,description,permissions);
+  if(item.popupPath||item.optionsPath){const pages=document.createElement("div");pages.className="meta";pages.textContent=`UI: ${[item.popupPath?"popup":"",item.optionsPath?"options":""].filter(Boolean).join(", ")||"—"}`;info.append(pages);}
+  top.append(icon,info);
   const toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=item.enabled;toggle.title="Enable extension";toggle.addEventListener("change",()=>run(()=>window.extensionsApi.setEnabled(item.id,toggle.checked)).then(refresh).catch(()=>{toggle.checked=!toggle.checked;}));top.append(toggle);card.appendChild(top);
   const actions=document.createElement("div");actions.className="card-actions";
-  const actionDefinitions=[["Details",()=>toggleDetails(card,item.id)],["Reload",()=>run(()=>window.extensionsApi.reload(item.id)).then(refresh)]];
+  const actionDefinitions=[["Details",()=>toggleDetails(card,item.id)]];
+  if(item.popupPath){actionDefinitions.push(["Popup",()=>run(()=>window.extensionsApi.openPopup(item.id))]);}
+  if(item.optionsPath){actionDefinitions.push(["Options",()=>run(()=>window.extensionsApi.openOptions(item.id))]);}
+  actionDefinitions.push(["Reload",()=>run(()=>window.extensionsApi.reload(item.id)).then(refresh)]);
   if(state.config.developerMode){actionDefinitions.push(["Open folder",()=>run(()=>window.extensionsApi.openFolder(item.id))],["Export metadata",()=>run(()=>window.extensionsApi.exportMetadata(item.id))]);}
   for(const [label,handler] of actionDefinitions){const button=document.createElement("button");button.textContent=label;button.addEventListener("click",()=>handler().catch((error)=>setStatus(error.message||String(error))));actions.appendChild(button);}
   const remove=document.createElement("button");remove.className="danger";remove.textContent="Remove";remove.addEventListener("click",async()=>{if(confirm(`Remove ${item.name||"this extension"}?`)){await run(()=>window.extensionsApi.remove(item.id));await refresh();}});actions.appendChild(remove);card.appendChild(actions);

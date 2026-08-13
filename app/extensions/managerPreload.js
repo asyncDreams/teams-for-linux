@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld('extensionsApi', {
   reload: (id) => ipcRenderer.invoke('extension-reload', { id }),
   openFolder: (id) => ipcRenderer.invoke('extension-open-folder', { id }),
   exportMetadata: (id) => ipcRenderer.invoke('extension-export-metadata', { id }),
+  openPopup: (id) => ipcRenderer.invoke('extension-open-popup', { id }),
+  openOptions: (id) => ipcRenderer.invoke('extension-open-options', { id }),
 });

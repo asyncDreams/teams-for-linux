@@ -182,6 +182,8 @@ const allowedChannels = new Set([
   'extension-set-enabled',
   'extension-reload',
   'extension-open-folder',
+  'extension-open-popup',
+  'extension-open-options',
   'extension-export-metadata',
   'extension-open-manager',
   'notification-toast-action',

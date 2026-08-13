@@ -16,6 +16,11 @@ const {
   readManifest,
   validateManifest,
 } = require('./crx');
+const {
+  extensionPageUrl,
+  getOptionsPage,
+  getPopupPath,
+} = require('./manifest');
 const ExtensionRegistry = require('./registry');
 
 const MAX_RECORDS = 100;
@@ -139,6 +144,11 @@ class ExtensionManager {
       await shell.openPath(record.path);
       return { ok: true };
     });
+    // Open the extension action popup (sign-in/settings surface) in a window
+    // that shares the Teams partition so chrome-extension URLs resolve.
+    ipcMain.handle('extension-open-popup', async (_event, payload) => this.openPopup(payload?.id));
+    // Open the extension options page declared by options_ui/options_page.
+    ipcMain.handle('extension-open-options', async (_event, payload) => this.openOptions(payload?.id));
     ipcMain.handle('extension-export-metadata', async (_event, payload) => {
       this.#assertEnabled();
       return this.#exportMetadata(payload?.id);
@@ -307,6 +317,41 @@ class ExtensionManager {
     return this.#publicRecord(replacement);
   }
 
+  openPopup(id) {
+    this.#assertEnabled();
+    const record = this.#getRecord(id);
+    if (!record.popupPath) throw new Error('This extension has no popup');
+    this.#openExtensionPage(record, record.popupPath, record.name, { width: 420, height: 560 });
+    return { ok: true };
+  }
+
+  openOptions(id) {
+    this.#assertEnabled();
+    const record = this.#getRecord(id);
+    if (!record.optionsPath) throw new Error('This extension has no options page');
+    this.#openExtensionPage(record, record.optionsPath, `${record.name} — Options`, { width: 800, height: 620 });
+    return { ok: true };
+  }
+
+  #openExtensionPage(record, relPath, title, dimensions) {
+    const url = extensionPageUrl(record.id, relPath);
+    if (!url) throw new Error('Invalid extension page path');
+    const partition = this.#config?.partition || 'persist:teams-4-linux';
+    const window = new BrowserWindow({
+      width: dimensions.width,
+      height: dimensions.height,
+      title,
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition,
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+    window.loadURL(url);
+    return window;
+  }
+
   async reload(id) {
     const record = this.#getRecord(id);
     try { this.#getSession().removeExtension(record.id); } catch { /* best effort */ }
@@ -444,6 +489,9 @@ class ExtensionManager {
       hostPermissions: record.hostPermissions,
       manifestVersion: record.manifestVersion,
       sourceFileName: record.sourceFileName,
+      popupPath: record.popupPath || null,
+      optionsPath: record.optionsPath || null,
+      optionsInTab: record.optionsInTab === true,
       lastError: record.lastError || null,
     };
     if (includeManifest) result.manifest = record.manifest;
@@ -497,6 +545,9 @@ function normalizeRecord(record) {
     permissions: stringArray(record.permissions),
     hostPermissions: stringArray(record.hostPermissions),
     manifestVersion: record.manifestVersion === 2 ? 2 : 3,
+    popupPath: typeof record.popupPath === 'string' ? record.popupPath.slice(0, 512) : null,
+    optionsPath: typeof record.optionsPath === 'string' ? record.optionsPath.slice(0, 512) : null,
+    optionsInTab: record.optionsInTab === true,
     sourceHash: typeof record.sourceHash === 'string' ? record.sourceHash : null,
     sourceFileName: typeof record.sourceFileName === 'string' ? record.sourceFileName.slice(0, 255) : null,
     manifest: sanitizeManifest(record.manifest),
@@ -506,6 +557,7 @@ function normalizeRecord(record) {
 
 function makeRecord(extension, manifest, extensionPath, source, previous = null) {
   validateManifest(manifest);
+  const optionsPage = getOptionsPage(manifest);
   return {
     id: extension.id,
     name: String(manifest.name || extension.name || path.basename(extensionPath)).slice(0, 200),
@@ -521,6 +573,9 @@ function makeRecord(extension, manifest, extensionPath, source, previous = null)
     permissions: stringArray(manifest.permissions),
     hostPermissions: stringArray([...(manifest.host_permissions || []), ...(manifest.permissions || []).filter((value) => value.includes('://'))]),
     manifestVersion: manifest.manifest_version,
+    popupPath: getPopupPath(manifest),
+    optionsPath: optionsPage?.path || null,
+    optionsInTab: optionsPage?.openInTab === true,
     sourceHash: previous?.sourceHash || null,
     sourceFileName: previous?.sourceFileName || null,
     manifest: sanitizeManifest(manifest),
@@ -548,7 +603,23 @@ function sanitizeManifest(manifest) {
       service_worker: typeof manifest.background.service_worker === 'string' ? manifest.background.service_worker : null,
       scripts: stringArray(manifest.background.scripts),
     } : null,
+    action: sanitizeAction(manifest.action),
+    browser_action: sanitizeAction(manifest.browser_action),
+    page_action: sanitizeAction(manifest.page_action),
+    options_ui: manifest.options_ui && typeof manifest.options_ui === 'object' ? {
+      page: typeof manifest.options_ui.page === 'string' ? manifest.options_ui.page.slice(0, 512) : null,
+      open_in_tab: manifest.options_ui.open_in_tab === true,
+    } : null,
+    options_page: typeof manifest.options_page === 'string' ? manifest.options_page.slice(0, 512) : null,
     icons: manifest.icons && typeof manifest.icons === 'object' ? Object.fromEntries(Object.entries(manifest.icons).slice(0, 20).map(([size, value]) => [String(size), String(value).slice(0, 512)])) : {},
+  };
+}
+
+function sanitizeAction(action) {
+  if (!action || typeof action !== 'object') return null;
+  return {
+    default_popup: typeof action.default_popup === 'string' ? action.default_popup.slice(0, 512) : null,
+    default_title: typeof action.default_title === 'string' ? action.default_title.slice(0, 256) : null,
   };
 }
 

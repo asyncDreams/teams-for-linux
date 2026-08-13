@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -14,12 +15,16 @@ const MAX_ENTRIES = 10_000;
 const MAX_MANIFEST_BYTES = 256 * 1024;
 
 function readCrxZip(input) {
-  const buffer = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
+  const buffer = toBuffer(input);
   if (buffer.length > MAX_ARCHIVE_BYTES) {
     throw new Error('Extension archive is too large');
   }
   const zipOffset = getZipOffset(buffer);
   return buffer.subarray(zipOffset);
+}
+
+function toBuffer(input) {
+  return Buffer.isBuffer(input) ? input : fs.readFileSync(input);
 }
 
 function getZipOffset(buffer) {
@@ -230,11 +235,128 @@ function validateManifest(manifest) {
 }
 
 function extractCrx(input, destination) {
-  const zip = readCrxZip(input);
+  const buffer = toBuffer(input);
+  const zip = readCrxZip(buffer);
+  const publicKey = getCrxPublicKey(buffer);
   extractZip(zip, destination);
   const extensionPath = findExtensionRoot(destination);
-  const manifest = readManifest(extensionPath);
+  let manifest = readManifest(extensionPath);
+  if (publicKey && !manifest.key) {
+    // Persist the signing key so Electron derives the same extension id that
+    // Chrome does; this is required for OAuth redirect URIs to match.
+    manifest = { ...manifest, key: publicKey.toString('base64') };
+    fs.writeFileSync(path.join(extensionPath, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+  }
   return { extensionPath, manifest };
+}
+
+/**
+ * Returns the DER-encoded public key embedded in a CRX header, or null when
+ * the archive is a bare ZIP without one. CRX2 stores it inline; CRX3 wraps it
+ * in a protobuf `CrxFileHeader`.
+ * @param {Buffer} buffer
+ * @returns {Buffer|null}
+ */
+function getCrxPublicKey(buffer) {
+  if (buffer.length < 12 || buffer.readUInt32LE(0) !== CRX_MAGIC) return null;
+  const version = buffer.readUInt32LE(4);
+  if (version === 2) {
+    const publicKeyLength = buffer.readUInt32LE(8);
+    const offset = 16;
+    if (offset + publicKeyLength > buffer.length) return null;
+    return buffer.subarray(offset, offset + publicKeyLength);
+  }
+  if (version === 3) {
+    const headerSize = buffer.readUInt32LE(8);
+    const headerOffset = 12;
+    const headerEnd = headerOffset + headerSize;
+    if (headerEnd > buffer.length) return null;
+    return parseCrx3PublicKey(buffer.subarray(headerOffset, headerEnd));
+  }
+  return null;
+}
+
+function parseCrx3PublicKey(header) {
+  let offset = 0;
+  while (offset < header.length) {
+    const tag = readVarint(header, offset);
+    offset = tag.offset;
+    const fieldNumber = tag.value >>> 3;
+    const wireType = tag.value & 0x7;
+    if (wireType === 2) {
+      const length = readVarint(header, offset);
+      offset = length.offset;
+      const end = offset + length.value;
+      if (end > header.length) break;
+      if (fieldNumber === 2) {
+        // sha256_with_rsa proof message.
+        return parseProofPublicKey(header.subarray(offset, end));
+      }
+      offset = end;
+    } else if (wireType === 0) {
+      offset = readVarint(header, offset).offset;
+    } else if (wireType === 5) {
+      offset += 4;
+    } else if (wireType === 1) {
+      offset += 8;
+    } else {
+      break;
+    }
+  }
+  return null;
+}
+
+function parseProofPublicKey(proof) {
+  let offset = 0;
+  while (offset < proof.length) {
+    const tag = readVarint(proof, offset);
+    offset = tag.offset;
+    const fieldNumber = tag.value >>> 3;
+    const wireType = tag.value & 0x7;
+    if (wireType === 2) {
+      const length = readVarint(proof, offset);
+      offset = length.offset;
+      const end = offset + length.value;
+      if (end > proof.length) break;
+      if (fieldNumber === 1) return proof.subarray(offset, end);
+      offset = end;
+    } else if (wireType === 0) {
+      offset = readVarint(proof, offset).offset;
+    } else {
+      break;
+    }
+  }
+  return null;
+}
+
+function readVarint(buffer, offset) {
+  let value = 0;
+  let shift = 0;
+  let index = offset;
+  while (index < buffer.length) {
+    const byte = buffer[index];
+    index += 1;
+    value += (byte & 0x7f) * 2 ** shift;
+    if ((byte & 0x80) === 0) break;
+    shift += 7;
+  }
+  return { value, offset: index };
+}
+
+/**
+ * Derives the canonical Chromium extension id from a DER public key:
+ * SHA-256 the key and map the first 16 bytes' nibbles to 'a'..'p'.
+ * @param {Buffer} publicKey
+ * @returns {string}
+ */
+function deriveExtensionId(publicKey) {
+  const digest = crypto.createHash('sha256').update(publicKey).digest();
+  let id = '';
+  for (let i = 0; i < 16; i += 1) {
+    id += String.fromCharCode(0x61 + (digest[i] >>> 4));
+    id += String.fromCharCode(0x61 + (digest[i] & 0x0f));
+  }
+  return id;
 }
 
 // Small table-based CRC-32 implementation keeps archive verification dependency-free.
@@ -257,7 +379,9 @@ function crc32(buffer) {
 module.exports = {
   MAX_ARCHIVE_BYTES,
   MAX_UNCOMPRESSED_BYTES,
+  deriveExtensionId,
   extractCrx,
+  getCrxPublicKey,
   getZipOffset,
   parseZipEntries,
   readCrxZip,
