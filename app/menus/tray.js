@@ -89,11 +89,14 @@ class ApplicationTray {
   updateTrayImage(iconUrl, flash, count, presence, presenceSource) {
     if (this.tray && !this.tray.isDestroyed()) {
       const effectiveIconPath = iconUrl || this.iconPath;
-      const image = this.getIconImage(effectiveIconPath);
-      this.tray.setImage(image);
+      // Teams sends the same icon data URL on every status/badge update;
+      // skip the nativeImage decode + setImage round-trip when it is unchanged.
+      if (effectiveIconPath !== this.lastUpdate.icon) {
+        this.tray.setImage(this.getIconImage(effectiveIconPath));
+      }
       this.window.flashFrame(flash);
       this.lastUpdate = {
-        icon: iconUrl || null,
+        icon: effectiveIconPath,
         flash: flash === true,
         count: Number(count) || 0,
         presence: presence || null,

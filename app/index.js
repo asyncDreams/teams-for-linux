@@ -233,6 +233,12 @@ if (gotTheLock) {
       await mqttClient.disconnect();
     }
   });
+
+  // Flush any debounced notification-history writes so a trailing burst of
+  // notifications is persisted before the process exits.
+  app.on("before-quit", () => {
+    notificationHistoryService.flush();
+  });
   app.on("certificate-error", handleCertificateError);
   app.on("browser-window-focus", handleGlobalShortcutDisabled);
   app.on("browser-window-blur", handleGlobalShortcutDisabledRevert);

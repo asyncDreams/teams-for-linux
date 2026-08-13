@@ -9,6 +9,7 @@ const MAX_ENTRIES = 5000;
 const MAX_TEXT_LENGTH = 2000;
 const MAX_AVATAR_LENGTH = 32 * 1024;
 const RETENTION_DAYS = new Set([7, 30, 90, 0]);
+const WRITE_DEBOUNCE_MS = 200;
 const CHAT_TYPES = new Set(['direct', 'group']);
 const CALL_TYPES = new Set(['call', 'missedCall']);
 
@@ -49,6 +50,8 @@ class NotificationHistoryService {
   #entries = [];
   #initialized = false;
   #changeListener = null;
+  #writeTimer = null;
+  #dirty = false;
 
   constructor(userDataPath, options = {}) {
     this.#filePath = path.join(userDataPath, 'notification-history.json');
@@ -72,7 +75,8 @@ class NotificationHistoryService {
     this.#enabled = options?.enabled === true;
     this.#retentionDays = normaliseRetentionDays(options?.retentionDays);
     this.#cleanupRetention();
-    this.#write();
+    this.#scheduleWrite();
+    this.#notifyChange();
   }
 
   isEnabled() {
@@ -108,7 +112,8 @@ class NotificationHistoryService {
 
     this.#entries = [entry, ...this.#entries.filter((item) => item.id !== entry.id)].slice(0, MAX_ENTRIES);
     this.#cleanupRetention();
-    this.#write();
+    this.#scheduleWrite();
+    this.#notifyChange();
     return entry.id;
   }
 
@@ -142,7 +147,8 @@ class NotificationHistoryService {
     const entry = this.#entries.find((item) => item.id === id);
     if (!entry) return false;
     entry.unread = false;
-    this.#write();
+    this.#scheduleWrite();
+    this.#notifyChange();
     return true;
   }
 
@@ -160,7 +166,10 @@ class NotificationHistoryService {
         changed = true;
       }
     }
-    if (changed) this.#write();
+    if (changed) {
+      this.#scheduleWrite();
+      this.#notifyChange();
+    }
     return changed;
   }
 
@@ -169,14 +178,18 @@ class NotificationHistoryService {
     const previousLength = this.#entries.length;
     this.#entries = this.#entries.filter((entry) => entry.id !== id);
     if (this.#entries.length === previousLength) return false;
-    this.#write();
+    this.#scheduleWrite();
+    this.#notifyChange();
     return true;
   }
 
   clearAll() {
     const hadEntries = this.#entries.length > 0;
     this.#entries = [];
-    if (hadEntries) this.#write();
+    if (hadEntries) {
+      this.#scheduleWrite();
+      this.#notifyChange();
+    }
     return hadEntries;
   }
 
@@ -208,6 +221,43 @@ class NotificationHistoryService {
     ipcMain.handle('notification-history-export', () => this.exportJson());
     // Return the unread history count for the menu/badge.
     ipcMain.handle('notification-history-unread-count', () => this.unreadCount());
+  }
+
+  /**
+   * Persists any pending changes immediately. Writes are coalesced with a short
+   * debounce so a burst of notifications produces a single disk write instead
+   * of one per notification; call this on shutdown so the last burst is never
+   * lost. Safe to call when there is nothing pending.
+   */
+  flush() {
+    if (this.#writeTimer) {
+      clearTimeout(this.#writeTimer);
+      this.#writeTimer = null;
+    }
+    if (this.#dirty) {
+      this.#dirty = false;
+      this.#write();
+    }
+  }
+
+  /**
+   * Schedules a disk write. The first mutation in a burst is written
+   * immediately (preserving single-notification durability); subsequent
+   * mutations within WRITE_DEBOUNCE_MS are coalesced into one trailing write.
+   */
+  #scheduleWrite() {
+    if (this.#writeTimer) {
+      this.#dirty = true;
+      return;
+    }
+    this.#write();
+    this.#writeTimer = setTimeout(() => {
+      this.#writeTimer = null;
+      if (this.#dirty) {
+        this.#dirty = false;
+        this.#write();
+      }
+    }, WRITE_DEBOUNCE_MS);
   }
 
   #load() {
@@ -254,7 +304,6 @@ class NotificationHistoryService {
     } catch {
       // History is an enhancement; a read-only profile must not break notifications.
     }
-    this.#notifyChange();
   }
 
   #notifyChange() {

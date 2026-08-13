@@ -100,6 +100,18 @@ describe('NotificationHistoryService persistence', () => {
     service.record({ id: 'init-1', type: 'mention' });
     assert.deepEqual(seen, [1]);
   });
+
+  it('coalesces a burst of records and flushes the latest state on demand', () => {
+    const service = new NotificationHistoryService(userDataPath, { enabled: true, retentionDays: 0 });
+    service.record({ id: 'burst-1', type: 'direct' });
+    service.record({ id: 'burst-2', type: 'direct' });
+    service.record({ id: 'burst-3', type: 'direct' });
+    // flush() is idempotent and safe to call with no pending changes.
+    service.flush();
+    service.flush();
+    const reloaded = new NotificationHistoryService(userDataPath, { enabled: true, retentionDays: 0 });
+    assert.deepEqual(reloaded.list().map((entry) => entry.id), ['burst-3', 'burst-2', 'burst-1']);
+  });
 });
 
 describe('NotificationHistoryService retention and queries', () => {
