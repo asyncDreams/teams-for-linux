@@ -3,7 +3,7 @@
 const { BrowserWindow } = require('electron');
 const path = require('node:path');
 
-class PresenceDiagnosticsWindow {
+class DiagnosticsWindow {
   #mainWindow;
   #window = null;
 
@@ -19,11 +19,11 @@ class PresenceDiagnosticsWindow {
     }
 
     this.#window = new BrowserWindow({
-      title: 'Presence Diagnostics',
-      width: 720,
-      height: 560,
-      minWidth: 560,
-      minHeight: 400,
+      title: 'Diagnostics',
+      width: 760,
+      height: 600,
+      minWidth: 600,
+      minHeight: 440,
       show: false,
       autoHideMenuBar: true,
       parent: this.#mainWindow?.isDestroyed?.() ? undefined : this.#mainWindow,
@@ -46,4 +46,4 @@ class PresenceDiagnosticsWindow {
   }
 }
 
-module.exports = PresenceDiagnosticsWindow;
+module.exports = DiagnosticsWindow;

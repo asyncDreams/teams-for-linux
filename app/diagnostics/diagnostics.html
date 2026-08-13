@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagnostics</title>
+  <link rel="stylesheet" href="../assets/css/fluent-parity.css">
+  <style>
+    :root { color-scheme: light dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #f7f8fc; color: #242338; }
+    @media (prefers-color-scheme: dark) { body { background: #171722; color: #f4f3ff; } .panel { background: #232332; } th { color: #aaa8c5; } .value { color: #f4f3ff; } }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    .muted { color: #73728b; font-size: 13px; }
+    .tabs { display: flex; gap: 8px; margin: 18px 0 0; border-bottom: 1px solid rgba(127, 125, 155, .25); }
+    .tab { padding: 10px 16px; cursor: pointer; border: none; background: none; font: inherit; color: #5d5b77; border-bottom: 2px solid transparent; }
+    .tab.active { color: #4f4bd8; border-bottom-color: #4f4bd8; }
+    .panel { margin-top: 18px; padding: 18px; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(39, 35, 79, .10); }
+    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .metric { padding: 12px; border-radius: 10px; background: rgba(91, 91, 214, .09); }
+    .metric strong { display: block; margin-top: 4px; font-size: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .label { display: block; color: #73728b; font-size: 12px; }
+    .value { display: block; margin-top: 5px; font-size: 16px; font-weight: 600; color: #242338; }
+    .ok { color: #107c41; } .warn { color: #a15c00; } .bad { color: #b3261e; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 13px; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid rgba(127, 125, 155, .2); }
+    th { color: #5d5b77; font-weight: 600; }
+    td.error { color: #b3261e; }
+    .empty { padding: 18px 0 4px; color: #73728b; }
+  </style>
+</head>
+<body>
+  <h1>Diagnostics</h1>
+  <div class="muted">Read-only runtime diagnostics. Refreshes automatically. Environment values are reduced to safe capability flags.</div>
+  <nav class="tabs">
+    <button class="tab active" data-panel="presence">Presence</button>
+    <button class="tab" data-panel="sharing">Screen Sharing</button>
+  </nav>
+
+  <section class="panel" data-panel="presence" id="panel-presence">
+    <div class="summary">
+      <div class="metric"><span class="muted">Unified sync</span><strong id="enabled">Disabled</strong></div>
+      <div class="metric"><span class="muted">Current status</span><strong id="current">No signal</strong></div>
+      <div class="metric"><span class="muted">Active providers</span><strong id="active">None</strong></div>
+    </div>
+    <p class="muted" id="updated">No provider update received.</p>
+    <h2>Providers</h2>
+    <table>
+      <thead><tr><th>Provider</th><th>Status</th><th>Source</th><th>Last sync</th><th>Health</th></tr></thead>
+      <tbody id="providers"></tbody>
+    </table>
+    <div class="empty" id="empty">No diagnostics are available until unified sync is enabled.</div>
+  </section>
+
+  <section class="panel" data-panel="sharing" id="panel-sharing" hidden>
+    <div class="grid">
+      <div class="metric"><span class="label">Session</span><strong class="value" id="session">—</strong></div>
+      <div class="metric"><span class="label">Desktop / backend</span><strong class="value" id="backend">—</strong></div>
+      <div class="metric"><span class="label">Wayland mode</span><strong class="value" id="mode">—</strong></div>
+      <div class="metric"><span class="label">Sharing strategy</span><strong class="value" id="strategy">—</strong></div>
+      <div class="metric"><span class="label">Portal available</span><strong class="value" id="portal">—</strong></div>
+      <div class="metric"><span class="label">PipeWire path</span><strong class="value" id="pipewire">—</strong></div>
+      <div class="metric"><span class="label">Currently sharing</span><strong class="value" id="active-sharing">—</strong></div>
+      <div class="metric"><span class="label">Last error</span><strong class="value" id="error">None</strong></div>
+    </div>
+    <p class="muted" id="sharing-updated">Waiting for diagnostics…</p>
+  </section>
+
+  <script>
+    const get = (id) => document.getElementById(id);
+    const dateText = (value) => value ? new Date(value).toLocaleString() : '—';
+    const yesNo = (value) => value ? 'Yes' : 'No';
+
+    // --- tab switching ---
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const panels = Array.from(document.querySelectorAll('.panel[data-panel]'));
+    function activate(name) {
+      for (const tab of tabs) tab.classList.toggle('active', tab.dataset.panel === name);
+      for (const panel of panels) panel.hidden = panel.dataset.panel !== name;
+    }
+    for (const tab of tabs) tab.addEventListener('click', () => activate(tab.dataset.panel));
+
+    // --- presence panel ---
+    function renderPresence(data) {
+      const enabled = data?.enabled === true;
+      get('enabled').textContent = enabled ? 'Enabled' : 'Disabled';
+      const current = data?.current;
+      get('current').textContent = current ? `${current.label || 'Unknown'} · ${current.source || 'provider'}` : 'No signal';
+      get('active').textContent = data?.activeProviders?.length ? data.activeProviders.join(', ') : 'None';
+      get('updated').textContent = data?.lastSyncAt ? `Last provider update: ${dateText(data.lastSyncAt)}` : 'No provider update received.';
+      const rows = get('providers');
+      rows.replaceChildren();
+      const providers = Array.isArray(data?.providers) ? data.providers : [];
+      get('empty').hidden = providers.length > 0;
+      for (const provider of providers) {
+        const row = document.createElement('tr');
+        [
+          provider.name,
+          provider.active && provider.label ? provider.label : 'Inactive',
+          provider.active && provider.source ? provider.source : '—',
+          dateText(provider.lastSyncAt),
+          provider.lastError ? `Retrying (${provider.lastError})` : 'OK',
+        ].forEach((value, index) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          if (index === 4 && provider.lastError) cell.className = 'error';
+          row.append(cell);
+        });
+        rows.append(row);
+      }
+    }
+
+    // --- screen sharing panel ---
+    function setValue(id, value, className = '') {
+      const element = get(id);
+      element.textContent = value;
+      element.className = `value ${className}`;
+    }
+    function renderSharing(data) {
+      const session = data?.session || {};
+      setValue('session', `${session.sessionType || 'unknown'}${session.isWayland ? ' · native' : ''}`);
+      setValue('backend', `${session.desktop || 'unknown'} · ${data?.backend || 'unknown'}`);
+      setValue('mode', data?.mode || 'auto');
+      setValue('strategy', data?.strategy || 'unknown', data?.strategy === 'portal' ? 'ok' : 'warn');
+      setValue('portal', yesNo(data?.available), data?.available ? 'ok' : 'warn');
+      setValue('pipewire', yesNo(data?.pipeWire), data?.pipeWire ? 'ok' : '');
+      setValue('active-sharing', yesNo(data?.active), data?.active ? 'ok' : '');
+      const lastError = data?.lastError;
+      setValue('error', lastError ? `${lastError.code || 'unknown'} · ${lastError.at || ''}` : 'None', lastError ? 'bad' : 'ok');
+      get('sharing-updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    }
+
+    async function refreshPresence() {
+      try { renderPresence(await globalThis.presenceDiagnosticsApi.get()); } catch { /* window may be closing */ }
+    }
+    async function refreshSharing() {
+      try { renderSharing(await globalThis.screenSharingDiagnosticsApi.get()); } catch { /* window may be closing */ }
+    }
+    refreshPresence();
+    refreshSharing();
+    setInterval(refreshPresence, 2000);
+    setInterval(refreshSharing, 2000);
+  </script>
+</body>
+</html>

@@ -53,7 +53,7 @@ describe('Fluent app-owned surfaces', () => {
     for (const page of [
       'app/extensions/manager.html',
       'app/notifications/history.html',
-      'app/presence/diagnostics.html',
+      'app/diagnostics/diagnostics.html',
       'app/notificationSystem/notificationToast.html',
     ]) {
       assert.match(read(page), /fluent-parity\.css/);

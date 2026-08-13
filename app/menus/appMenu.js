@@ -59,6 +59,10 @@ exports = module.exports = (Menus) => ({
           click: () => Menus.showGpuInfo(),
         },
         {
+          label: "Diagnostics",
+          click: () => Menus.openDiagnostics(),
+        },
+        {
           label: "Presence",
           submenu: getPresenceMenu(Menus),
         },
@@ -155,10 +159,6 @@ function getPresenceMenu(Menus) {
       click: () => Menus.togglePresenceSync(),
     },
     {
-      label: "Presence Diagnostics",
-      click: () => Menus.openPresenceDiagnostics(),
-    },
-    {
       type: "separator",
     },
     {
@@ -187,13 +187,6 @@ function getLinuxDesktopMenu(Menus) {
     || Menus.configGroup.startupConfig.wayland?.mode
     || "auto";
   return [
-    {
-      label: "Screen Sharing Diagnostics",
-      click: () => Menus.openScreenSharingDiagnostics(),
-    },
-    {
-      type: "separator",
-    },
     ...["auto", "enabled", "disabled"].map((mode) => ({
       label: `Wayland: ${mode[0].toUpperCase()}${mode.slice(1)}`,
       type: "radio",
