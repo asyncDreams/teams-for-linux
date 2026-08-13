@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('notificationHistoryApi', {
   clearAll: () => ipcRenderer.invoke('notification-history-clear-all'),
   exportJson: () => ipcRenderer.invoke('notification-history-export'),
   unreadCount: () => ipcRenderer.invoke('notification-history-unread-count'),
+  open: (id) => ipcRenderer.invoke('notification-history-open', id),
 });

@@ -870,6 +870,45 @@ exports.setQuickChatManager = function (quickChatManager) {
   }
 };
 
+// Wires the notification-history service's unread count into the tray
+// tooltip without coupling the history module to the windowing layer. Safe
+// to call before the tray exists (trayIconEnabled=false) — it's a no-op then.
+exports.setNotificationHistoryService = function (service) {
+  if (menus && typeof service?.setChangeListener === "function") {
+    menus.setNotificationHistoryService(service);
+  }
+};
+
+/**
+ * Navigates the main window to a Teams deep link (https://teams… or
+ * msteams://…). Legacy hosts are canonicalized; invalid or external URLs are
+ * ignored so history entries can never redirect the window off-Teams.
+ * @param {string} url
+ * @returns {boolean} true when navigation was initiated
+ */
+exports.navigateToTeamsUrl = function (url) {
+  if (!window || window.isDestroyed() || typeof url !== "string") return false;
+  let target = url.trim();
+  if (!target) return false;
+  try {
+    if (target.startsWith("msteams:")) {
+      // v1 protocol is host-independent (msteams:/l/…) — prepend canonical origin.
+      if (/^msteams:\/\/teams\./i.test(target)) {
+        target = target.replace(/^msteams:/i, "https:");
+      } else {
+        target = (config?.url || "https://teams.cloud.microsoft") + target.replace(/^msteams:/i, "");
+      }
+    }
+    if (!teamsHosts.isValidTeamsUrl(target)) return false;
+    const normalized = teamsHosts.normalizeTeamsUrl(target);
+    window.loadURL(normalized, { userAgent: config?.chromeUserAgent });
+    restoreWindow();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 exports.onAppSecondInstance = function onAppSecondInstance(event, args) {
   console.debug("second-instance started");
   if (window) {

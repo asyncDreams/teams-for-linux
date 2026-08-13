@@ -75,6 +75,20 @@ class Menus {
     return _Menus_onSpellCheckerLanguageChanged.get(this);
   }
 
+  /**
+   * Keeps the tray tooltip unread badge in sync with the local notification
+   * history. Registers a change listener that pushes the unread count into the
+   * tray (when enabled) and seeds the initial value.
+   * @param {object} service NotificationHistoryService-like instance
+   */
+  setNotificationHistoryService(service) {
+    if (!service || typeof service.setChangeListener !== "function") return;
+    if (typeof service.unreadCount === "function") {
+      this.tray?.setHistoryUnread(service.unreadCount());
+    }
+    service.setChangeListener((unread) => this.tray?.setHistoryUnread(unread));
+  }
+
   set onSpellCheckerLanguageChanged(value) {
     if (typeof value === "function") {
       _Menus_onSpellCheckerLanguageChanged.set(this, value);

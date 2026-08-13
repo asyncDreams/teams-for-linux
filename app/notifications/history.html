@@ -28,6 +28,8 @@
     .entry { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: start; padding: 14px; background: white; border: 1px solid #e4e4e4; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
     @media (prefers-color-scheme: dark) { .entry { background: #2b2b2b; border-color: #444; } }
     .entry.unread { border-left: 4px solid #6264a7; padding-left: 11px; }
+    .entry.clickable { cursor: pointer; }
+    .entry.clickable:hover { border-color: #a7a8d8; box-shadow: 0 2px 8px rgb(98 100 167 / 18%); }
     .avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, #6264a7, #8b8cc7); color: white; font-weight: 700; overflow: hidden; }
     .avatar img { width: 100%; height: 100%; object-fit: cover; }
     .entry-title { font-weight: 650; display: flex; gap: 8px; align-items: baseline; }
@@ -66,12 +68,15 @@
   function renderEntry(entry) {
     const initial = esc((entry.sender?.displayName || 'T').trim().charAt(0).toUpperCase() || 'T');
     const avatar = entry.sender?.avatar ? '<img src="' + esc(entry.sender.avatar) + '" alt="">' : initial;
-    return '<article class="entry ' + (entry.unread ? 'unread' : '') + '">' +
+    const openButton = entry.deepLink
+      ? '<button data-action="open" data-id="' + esc(entry.id) + '">Open</button>'
+      : '';
+    return '<article class="entry ' + (entry.unread ? 'unread' : '') + (entry.deepLink ? ' clickable' : '') + '" data-id="' + esc(entry.id) + '" data-deeplink="' + esc(entry.deepLink || '') + '">' +
       '<div class="avatar">' + avatar + '</div>' +
       '<div><div class="entry-title">' + esc(entry.sender?.displayName || 'Teams') + ' <small>' + esc(formatDate(entry.timestamp)) + '</small></div>' +
       (entry.conversationTitle ? '<div class="conversation">' + esc(entry.conversationTitle) + '</div>' : '') +
       '<p class="preview">' + esc(entry.preview) + '</p><div class="meta"><span class="chip">' + esc(categoryLabel[entry.category] || entry.type) + '</span><span class="chip">' + esc(entry.urgency) + '</span></div></div>' +
-      '<div class="entry-controls"><button data-action="read" data-id="' + esc(entry.id) + '">' + (entry.unread ? 'Mark read' : 'Read') + '</button><button class="danger" data-action="clear" data-id="' + esc(entry.id) + '">Remove</button></div></article>';
+      '<div class="entry-controls">' + openButton + '<button data-action="read" data-id="' + esc(entry.id) + '">' + (entry.unread ? 'Mark read' : 'Read') + '</button><button class="danger" data-action="clear" data-id="' + esc(entry.id) + '">Remove</button></div></article>';
   }
   async function refresh() {
     const entries = await api.list(state);
@@ -79,8 +84,10 @@
     empty.hidden = entries.length !== 0;
     const unread = await api.unreadCount();
     count.textContent = entries.length + ' shown · ' + unread + ' unread';
-    list.querySelectorAll('button[data-action="read"]').forEach((button) => button.addEventListener('click', async () => { await api.markRead(button.dataset.id); refresh(); }));
-    list.querySelectorAll('button[data-action="clear"]').forEach((button) => button.addEventListener('click', async () => { await api.clear(button.dataset.id); refresh(); }));
+    list.querySelectorAll('button[data-action="read"]').forEach((button) => button.addEventListener('click', async (event) => { event.stopPropagation(); await api.markRead(button.dataset.id); refresh(); }));
+    list.querySelectorAll('button[data-action="clear"]').forEach((button) => button.addEventListener('click', async (event) => { event.stopPropagation(); await api.clear(button.dataset.id); refresh(); }));
+    list.querySelectorAll('button[data-action="open"]').forEach((button) => button.addEventListener('click', async (event) => { event.stopPropagation(); await api.open(button.dataset.id); refresh(); }));
+    list.querySelectorAll('article.entry[data-deeplink]').forEach((article) => article.addEventListener('click', async () => { await api.open(article.dataset.id); refresh(); }));
   }
   let searchTimer;
   document.getElementById('search').addEventListener('input', (event) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.query = event.target.value; refresh(); }, 120); });

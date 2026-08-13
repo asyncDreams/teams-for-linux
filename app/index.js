@@ -343,6 +343,24 @@ if (gotTheLock) {
     }
   });
 
+  // Open a notification-history entry in the main window. Resolves the entry's
+  // deep link (chat/meeting/channel), marks it read, and focuses Teams.
+  ipcMain.handle("notification-history-open", (_event, id) => {
+    const entry = notificationHistoryService.getById(id);
+    if (entry) {
+      notificationHistoryService.markRead(id);
+      const deepLink = typeof entry.deepLink === "string" ? entry.deepLink : null;
+      if (deepLink) {
+        mainAppWindow.navigateToTeamsUrl(deepLink);
+      } else {
+        mainAppWindow.restoreWindow();
+      }
+      return Boolean(deepLink);
+    }
+    mainAppWindow.restoreWindow();
+    return false;
+  });
+
   // Get current navigation state (can go back/forward)
   ipcMain.handle("get-navigation-state", (event) => {
     const webContents = event.sender;
@@ -813,6 +831,8 @@ async function handleAppReady() {
 
     await mainAppWindow.onAppReady(appConfig, customBackground, screenSharingService, profilesManager);
     linuxMediaControls.initialize();
+    // Keep the tray tooltip unread badge in sync with local notification history.
+    mainAppWindow.setNotificationHistoryService(notificationHistoryService);
     perf.mark("handleAppReady:mainWindowReady");
 
     // Wire per-profile WebContentsView lifecycle once the main window

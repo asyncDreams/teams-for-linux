@@ -195,7 +195,8 @@ const allowedChannels = new Set([
   'notification-history-clear',
   'notification-history-clear-all',
   'notification-history-export',
-  'notification-history-unread-count'
+  'notification-history-unread-count',
+  'notification-history-open'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);

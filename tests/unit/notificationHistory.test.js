@@ -57,6 +57,49 @@ describe('NotificationHistoryService persistence', () => {
     assert.equal(service.record({ id: 'disabled', type: 'direct' }), null);
     assert.equal(fs.existsSync(path.join(userDataPath, 'notification-history.json')), false);
   });
+
+  it('getById returns a copy with the deep link intact', () => {
+    const service = new NotificationHistoryService(userDataPath, { enabled: true, retentionDays: 0 });
+    service.record({
+      id: 'deep-1',
+      type: 'meeting',
+      preview: 'Standup in 5',
+      deepLink: 'https://teams.cloud.microsoft/l/meetup-join/xyz',
+    });
+
+    const entry = service.getById('deep-1');
+    assert.equal(entry.deepLink, 'https://teams.cloud.microsoft/l/meetup-join/xyz');
+    // Must be a copy so callers can't mutate internal state silently.
+    entry.deepLink = 'changed';
+    assert.equal(service.getById('deep-1').deepLink, 'https://teams.cloud.microsoft/l/meetup-join/xyz');
+  });
+
+  it('returns null for an unknown id', () => {
+    const service = new NotificationHistoryService(userDataPath, { enabled: true, retentionDays: 0 });
+    assert.equal(service.getById('missing'), null);
+  });
+
+  it('notifies the change listener with the unread count after mutations', () => {
+    const service = new NotificationHistoryService(userDataPath, { enabled: true, retentionDays: 0 });
+    const seen = [];
+    service.setChangeListener((unread) => seen.push(unread));
+    service.record({ id: 'c-1', type: 'direct' });
+    service.record({ id: 'c-2', type: 'channel' });
+    service.markRead('c-1');
+    service.clear('c-2');
+    assert.deepEqual(seen, [1, 2, 1, 0]);
+  });
+
+  it('initialises the listener from the constructor onChange option', () => {
+    const seen = [];
+    const service = new NotificationHistoryService(userDataPath, {
+      enabled: true,
+      retentionDays: 0,
+      onChange: (unread) => seen.push(unread),
+    });
+    service.record({ id: 'init-1', type: 'mention' });
+    assert.deepEqual(seen, [1]);
+  });
 });
 
 describe('NotificationHistoryService retention and queries', () => {

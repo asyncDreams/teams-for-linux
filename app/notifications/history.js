@@ -48,12 +48,24 @@ class NotificationHistoryService {
   #retentionDays;
   #entries = [];
   #initialized = false;
+  #changeListener = null;
 
   constructor(userDataPath, options = {}) {
     this.#filePath = path.join(userDataPath, 'notification-history.json');
     this.#enabled = options?.enabled === true;
     this.#retentionDays = normaliseRetentionDays(options?.retentionDays);
+    this.#changeListener = typeof options?.onChange === 'function' ? options.onChange : null;
     this.#load();
+  }
+
+  /**
+   * Registers a listener invoked with the unread count after every mutation.
+   * Used to keep the tray tooltip badge in sync without coupling this module
+   * to the windowing layer.
+   * @param {Function} fn
+   */
+  setChangeListener(fn) {
+    this.#changeListener = typeof fn === 'function' ? fn : null;
   }
 
   setOptions(options = {}) {
@@ -132,6 +144,12 @@ class NotificationHistoryService {
     entry.unread = false;
     this.#write();
     return true;
+  }
+
+  getById(id) {
+    if (typeof id !== 'string') return null;
+    const entry = this.#entries.find((item) => item.id === id);
+    return entry ? { ...entry } : null;
   }
 
   markAllRead() {
@@ -235,6 +253,17 @@ class NotificationHistoryService {
       fs.renameSync(temporaryPath, this.#filePath);
     } catch {
       // History is an enhancement; a read-only profile must not break notifications.
+    }
+    this.#notifyChange();
+  }
+
+  #notifyChange() {
+    if (this.#changeListener) {
+      try {
+        this.#changeListener(this.unreadCount());
+      } catch {
+        // A consumer failure must never break notification history writes.
+      }
     }
   }
 }
