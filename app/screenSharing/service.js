@@ -1,4 +1,4 @@
-const { ipcMain, BrowserWindow, desktopCapturer, screen } = require("electron");
+const { app, ipcMain, BrowserWindow, desktopCapturer, screen } = require("electron");
 const path = require("node:path");
 const { detectScreenSharingPortal, shouldPreferScreenSharingPortal } = require("../platform/wayland");
 
@@ -62,16 +62,24 @@ class ScreenSharingService {
   }
 
   shouldPreferPortal() {
-    return shouldPreferScreenSharingPortal(this.#config);
+    return shouldPreferScreenSharingPortal(this.#config, process.env, this.#portalOptions());
   }
 
   getDiagnostics() {
-    const portal = detectScreenSharingPortal(this.#config);
+    const portal = detectScreenSharingPortal(this.#config, process.env, this.#portalOptions());
     return {
       ...portal,
       active: this.#isSharing,
       lastError: this.#lastError,
     };
+  }
+
+  // The portal path only works on native Wayland ozone. Read the actual
+  // Chromium ozone platform (the packaged app defaults to x11/XWayland) so
+  // portal detection matches how getDisplayMedia will really behave, instead
+  // of trusting the desktop session type alone.
+  #portalOptions() {
+    return { ozonePlatform: app.commandLine.getSwitchValue("ozone-platform") };
   }
 
   #handleGetDiagnostics() {

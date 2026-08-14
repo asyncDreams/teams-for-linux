@@ -84,3 +84,16 @@ test("does not prefer a portal on X11 or when explicitly disabled", () => {
     "electron-picker",
   );
 });
+
+test("uses the Electron picker on XWayland (Wayland session, x11 ozone)", () => {
+  const diagnostics = detectScreenSharingPortal(
+    { linux: { waylandMode: "auto", portal: { enabled: true } } },
+    waylandEnv,
+    { platform: "linux", existsSync: exists, ozonePlatform: "x11" },
+  );
+  assert.equal(diagnostics.strategy, "electron-picker");
+  assert.equal(diagnostics.available, false);
+  assert.equal(diagnostics.nativeWayland, false);
+  assert.equal(diagnostics.pipeWire, false);
+  assert.equal(diagnostics.fallback, true);
+});

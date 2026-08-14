@@ -84,20 +84,33 @@ function detectScreenSharingPortal(config = {}, env = process.env, options = {})
   const session = resolveWaylandMode(config, env, options.platform || process.platform);
   const existsSync = options.existsSync || fs.existsSync;
   const portalConfigured = config.linux?.portal?.enabled ?? config.wayland?.portal?.enabled ?? true;
-  const available = session.enabled
+  const ozonePlatform = options.ozonePlatform || "auto";
+
+  // WebRTCPipeWireCapturer — the Chromium feature that lets getDisplayMedia
+  // talk to xdg-desktop-portal directly and bypass setDisplayMediaRequestHandler —
+  // only activates under native Wayland ozone. The packaged app ships with
+  // --ozone-platform=x11 (XWayland), so a Wayland *session* alone must not
+  // select the portal path: on XWayland the X11 capturer is used and the
+  // Electron display-media handler is required. Only treat the portal as
+  // available when Chromium is actually running native Wayland.
+  const nativeWayland = session.enabled && ozonePlatform !== "x11";
+
+  const available = nativeWayland
     && portalConfigured
     && session.session.hasSessionBus
     && hasPortalExecutable(existsSync);
   const backend = session.session.compositor;
-  const strategy = available ? "portal" : session.enabled ? "legacy-fallback" : "electron-picker";
+  const strategy = available ? "portal" : nativeWayland ? "legacy-fallback" : "electron-picker";
 
   return {
     mode: session.mode,
     enabled: session.enabled,
+    nativeWayland,
+    ozonePlatform,
     portalConfigured,
     available,
     backend,
-    pipeWire: session.enabled,
+    pipeWire: nativeWayland,
     strategy,
     fallback: strategy !== "portal",
     lastError: null,
