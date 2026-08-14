@@ -496,18 +496,6 @@ class Menus {
     this.setKeepAlwaysOnlineMode(current === 'always' ? 'disabled' : 'always');
   }
 
-  setWaylandMode(mode) {
-    const validModes = new Set(["auto", "enabled", "disabled"]);
-    if (!validModes.has(mode)) return;
-    const linux = {
-      ...(this.configGroup.startupConfig.linux || {}),
-      waylandMode: mode,
-    };
-    this.configGroup.startupConfig.linux = linux;
-    this.configGroup.legacyConfigStore.set("linux", linux);
-    this.updateMenu();
-  }
-
   toggleLinuxMediaControls() {
     const linux = this.configGroup.startupConfig.linux || {};
     const mediaControls = {
@@ -515,18 +503,6 @@ class Menus {
       enabled: linux.mediaControls?.enabled !== true,
     };
     const next = { ...linux, mediaControls };
-    this.configGroup.startupConfig.linux = next;
-    this.configGroup.legacyConfigStore.set("linux", next);
-    this.updateMenu();
-  }
-
-  toggleLinuxPortal() {
-    const linux = this.configGroup.startupConfig.linux || {};
-    const portal = {
-      ...(linux.portal || {}),
-      enabled: linux.portal?.enabled !== true,
-    };
-    const next = { ...linux, portal };
     this.configGroup.startupConfig.linux = next;
     this.configGroup.legacyConfigStore.set("linux", next);
     this.updateMenu();

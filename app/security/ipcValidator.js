@@ -27,7 +27,6 @@ const allowedChannels = new Set([
   'get-screen-share-stream',
   'get-screen-sharing-displays',
   'get-screen-sharing-status',
-  'screen-sharing-get-diagnostics',
   'resize-preview-window',
   // main → renderer only (webContents.postMessage); not gated by this validator,
   // listed here so the allowlist stays authoritative per CLAUDE.md.

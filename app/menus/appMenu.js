@@ -183,25 +183,7 @@ function getPresenceMenu(Menus) {
 }
 
 function getLinuxDesktopMenu(Menus) {
-  const waylandMode = Menus.configGroup.startupConfig.linux?.waylandMode
-    || Menus.configGroup.startupConfig.wayland?.mode
-    || "auto";
   return [
-    ...["auto", "enabled", "disabled"].map((mode) => ({
-      label: `Wayland: ${mode[0].toUpperCase()}${mode.slice(1)}`,
-      type: "radio",
-      checked: waylandMode === mode,
-      click: () => Menus.setWaylandMode(mode),
-    })),
-    {
-      type: "separator",
-    },
-    {
-      label: "Prefer desktop portal for screen sharing",
-      type: "checkbox",
-      checked: Menus.configGroup.startupConfig.linux?.portal?.enabled !== false,
-      click: () => Menus.toggleLinuxPortal(),
-    },
     {
       label: "Linux media controls",
       type: "checkbox",

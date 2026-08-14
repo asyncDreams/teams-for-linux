@@ -51,34 +51,13 @@
       "name": "linux",
       "type": "object",
       "default": {
-        "waylandMode": "auto",
-        "portal": {
-          "enabled": true
-        },
         "mediaControls": {
           "enabled": false
         }
       },
-      "description": "Linux desktop integration. waylandMode selects automatic, forced, or disabled Wayland handling. portal.enabled prefers xdg-desktop-portal/PipeWire screen sharing when available and falls back to the Electron picker. mediaControls is an opt-in Linux media-control bridge.",
+      "description": "Linux desktop integration. mediaControls is an opt-in Linux media-control bridge.",
       "applyMode": "restart",
       "fields": [
-        {
-          "path": "waylandMode",
-          "type": "string",
-          "default": "auto",
-          "description": "Wayland handling mode: auto detects the active session, enabled forces Wayland integration, disabled uses the legacy path.",
-          "choices": [
-            "auto",
-            "enabled",
-            "disabled"
-          ]
-        },
-        {
-          "path": "portal.enabled",
-          "type": "boolean",
-          "default": true,
-          "description": "Prefer xdg-desktop-portal/PipeWire for screen sharing when the active session supports it."
-        },
         {
           "path": "mediaControls.enabled",
           "type": "boolean",
@@ -1507,32 +1486,11 @@
       "name": "wayland",
       "type": "object",
       "default": {
-        "mode": "auto",
-        "portal": {
-          "enabled": true
-        },
         "xwaylandOptimizations": false
       },
-      "description": "Legacy Wayland configuration aliases. Prefer linux.waylandMode and linux.portal.enabled for new configuration. xwaylandOptimizations keeps GPU enabled and skips fake media UI under XWayland.",
+      "description": "Wayland display server configuration. xwaylandOptimizations: keeps GPU enabled and skips fake media UI flag under XWayland (may fix camera issues but can break screen sharing)",
       "applyMode": "restart",
       "fields": [
-        {
-          "path": "mode",
-          "type": "string",
-          "default": "auto",
-          "description": "Compatibility alias for linux.waylandMode.",
-          "choices": [
-            "auto",
-            "enabled",
-            "disabled"
-          ]
-        },
-        {
-          "path": "portal.enabled",
-          "type": "boolean",
-          "default": true,
-          "description": "Compatibility alias for linux.portal.enabled."
-        },
         {
           "path": "xwaylandOptimizations",
           "type": "boolean",

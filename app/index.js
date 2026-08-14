@@ -155,7 +155,7 @@ const notificationService = new NotificationService(
   notificationHistoryService
 );
 
-const screenSharingService = new ScreenSharingService(config);
+const screenSharingService = new ScreenSharingService();
 const linuxMediaControls = new LinuxMediaControls(config, () => mainAppWindow.getWindow());
 
 const partitionsManager = new PartitionsManager(appConfig.settingsStore);

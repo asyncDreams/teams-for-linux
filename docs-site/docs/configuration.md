@@ -671,12 +671,7 @@ Linux desktop integration is configured under the `linux` object.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `linux.waylandMode` | `string` | `"auto"` | Wayland handling: `auto` detects the session, `enabled` forces Wayland integration, `disabled` uses the legacy path. |
-| `linux.portal.enabled` | `boolean` | `true` | Prefer xdg-desktop-portal/PipeWire for screen sharing when the session supports it. |
 | `linux.mediaControls.enabled` | `boolean` | `false` | Expose Linux media/call controls through the desktop integration bridge. |
-
-> [!NOTE]
-> The legacy `wayland.mode` and `wayland.portal.enabled` aliases remain supported. See [Wayland](#wayland) and [Screen Sharing](#screen-sharing).
 
 ### Performance & Hardware
 

@@ -26,26 +26,6 @@ To find your config file [see the “Configuration” section](configuration.md#
 | `screenSharing.thumbnail.enabled` | `boolean` | `true` | Enable/disable the preview thumbnail window |
 | `screenSharing.thumbnail.alwaysOnTop` | `boolean` | `true` | Keep preview window always on top of other windows |
 
-### Linux Wayland and portal settings
-
-Wayland handling is controlled by `linux.waylandMode`:
-
-```json
-{
-  "linux": {
-    "waylandMode": "auto",
-    "portal": { "enabled": true },
-    "mediaControls": { "enabled": false }
-  }
-}
-```
-
-- `auto` detects a native Wayland session; `enabled` forces the Wayland integration; `disabled` keeps the legacy Electron picker path.
-- With `portal.enabled` on, xdg-desktop-portal/PipeWire is preferred when the portal executable and session bus are available. The Electron picker remains the fallback if they are not.
-- `mediaControls.enabled` is opt-in and exposes call, microphone, camera, and leave-meeting actions through the Linux media-control bridge.
-- Use **Debug → Linux Desktop → Screen Sharing Diagnostics** to see the detected session, portal backend, active strategy, and the last safe error code. No environment values are displayed.
-- `wayland.mode` and `wayland.portal.enabled` remain supported as compatibility aliases.
-
 ### Disabling Screen Sharing Preview
 
 To disable the preview window entirely:

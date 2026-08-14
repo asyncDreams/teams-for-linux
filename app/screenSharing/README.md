@@ -9,7 +9,6 @@ Provides native screen/window selection and preview window management for Teams 
 - **browser.js** - Renderer process UI logic
 - **preload.js** - Context bridge for IPC
 - **injectedScreenSharing.js** - Client-side Teams DOM integration
-- Diagnostics are surfaced through the shared **Diagnostics** hub (`app/diagnostics/`), reachable from **Debug → Diagnostics**.
 
 ## ScreenSharingService Class
 
@@ -26,7 +25,6 @@ Manages screen sharing IPC handlers and state.
 - `screen-sharing-started` - Session started event
 - `screen-sharing-stopped` - Session stopped event
 - `get-screen-sharing-status` - Check if sharing active
-- `screen-sharing-get-diagnostics` - Report Wayland mode, portal availability/backend, active strategy, and the last safe error code
 - `get-screen-share-stream` - Get active source ID
 - `get-screen-share-screen` - Get screen dimensions
 - `resize-preview-window` - Resize preview
@@ -34,7 +32,7 @@ Manages screen sharing IPC handlers and state.
 
 **Usage:**
 ```javascript
-const screenSharingService = new ScreenSharingService(config);
+const screenSharingService = new ScreenSharingService(mainWindow);
 screenSharingService.initialize();
 ```
 
@@ -67,6 +65,6 @@ The picker is a modal overlay over the main Teams window. Issue #2524.
 
 ## Platform Notes
 
-**Wayland:** `linux.waylandMode` supports `auto`, `enabled`, and `disabled`. When `linux.portal.enabled` is on and xdg-desktop-portal plus a session bus are available, Chromium's PipeWire portal path is preferred and the in-app Electron picker is retained as the fallback. The **Debug → Diagnostics** hub (Screen Sharing panel) reports the selected strategy without exposing environment values. Legacy `wayland.mode` and `wayland.portal.enabled` aliases remain supported. MediaStream UUIDs are not used as desktopCapturer source IDs.
+**Wayland:** Requires source IDs in `screen:x:y` or `window:x:y` format from desktopCapturer. MediaStream UUIDs will fail.
 
 See [ADR 001](../../docs-site/docs/development/adr/001-use-desktopcapturer-source-id-format.md) for technical details.

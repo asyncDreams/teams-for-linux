@@ -1,18 +1,11 @@
-const { app, ipcMain, BrowserWindow, desktopCapturer, screen } = require("electron");
+const { ipcMain, BrowserWindow, desktopCapturer, screen } = require("electron");
 const path = require("node:path");
-const { detectScreenSharingPortal, shouldPreferScreenSharingPortal } = require("../platform/wayland");
 
 class ScreenSharingService {
   #picker = null;
   #selectedScreenShareSource = null;
   #isSharing = false;
   #previewWindow = null;
-  #config;
-  #lastError = null;
-
-  constructor(config = {}) {
-    this.#config = config;
-  }
 
   initialize() {
     // Get available desktop capturer sources (screens/windows) for sharing
@@ -29,8 +22,6 @@ class ScreenSharingService {
     ipcMain.on("screen-sharing-stopped", this.#handleScreenSharingStopped.bind(this));
     // Get current screen sharing status
     ipcMain.handle("get-screen-sharing-status", this.#handleGetScreenSharingStatus.bind(this));
-    // Get Wayland/portal diagnostics and the active screen-sharing fallback strategy
-    ipcMain.handle("screen-sharing-get-diagnostics", this.#handleGetDiagnostics.bind(this));
     // Get screen share stream for thumbnail preview
     ipcMain.handle("get-screen-share-stream", this.#handleGetScreenShareStream.bind(this));
     // Get screen share screen details
@@ -59,38 +50,6 @@ class ScreenSharingService {
 
   isScreenSharingActive() {
     return this.#isSharing;
-  }
-
-  shouldPreferPortal() {
-    return shouldPreferScreenSharingPortal(this.#config, process.env, this.#portalOptions());
-  }
-
-  getDiagnostics() {
-    const portal = detectScreenSharingPortal(this.#config, process.env, this.#portalOptions());
-    return {
-      ...portal,
-      active: this.#isSharing,
-      lastError: this.#lastError,
-    };
-  }
-
-  // The portal path only works on native Wayland ozone. Read the actual
-  // Chromium ozone platform (the packaged app defaults to x11/XWayland) so
-  // portal detection matches how getDisplayMedia will really behave, instead
-  // of trusting the desktop session type alone.
-  #portalOptions() {
-    return { ozonePlatform: app.commandLine.getSwitchValue("ozone-platform") };
-  }
-
-  #handleGetDiagnostics() {
-    return this.getDiagnostics();
-  }
-
-  #rememberError(error) {
-    this.#lastError = {
-      code: error?.code || error?.name || "unknown",
-      at: new Date().toISOString(),
-    };
   }
 
   /**
@@ -132,8 +91,7 @@ class ScreenSharingService {
         };
       });
     } catch (error) {
-      this.#rememberError(error);
-      console.error("[SCREEN_SHARE] Failed to get desktop capturer sources", { code: error?.code || error?.name || "unknown" });
+      console.error("[SCREEN_SHARE] Failed to get desktop capturer sources:", error.message);
       return [];
     }
   }
@@ -159,8 +117,7 @@ class ScreenSharingService {
       const chosen = await this.#showScreenPicker(sources);
       return chosen ? chosen.id : null;
     } catch (error) {
-      this.#rememberError(error);
-      console.error("[SCREEN_SHARE] Failed to get desktop media sources", { code: error?.code || error?.name || "unknown" });
+      console.error("[SCREEN_SHARE] Failed to get desktop media sources:", error.message);
       return null;
     }
   }
