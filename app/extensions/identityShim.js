@@ -2,6 +2,8 @@
 
 const DEFAULT_REDIRECT_HOST = 'chromiumapp.org';
 const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
+const DENIED_PROTOCOLS = new Set(['file:', 'javascript:', 'data:', 'about:']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 /**
  * Extracts the extension id from a chrome-extension:// URL, or null when the
@@ -107,6 +109,36 @@ function isAuthorizedRedirect(redirectUrl, allowedHosts = [DEFAULT_REDIRECT_HOST
 }
 
 /**
+ * Classifies a URL an extension asked to open (window.open / tabs.create).
+ *
+ * - 'auth': https (or loopback http) -> open in-app in the Teams partition so
+ *   the OAuth session lands where the extension can use it.
+ * - 'extension': chrome-extension:// -> open in-app.
+ * - 'external': a custom scheme (otter://, msteams://, mailto:) -> hand to the
+ *   OS so the native handler (e.g. the Otter desktop app) can complete the flow.
+ * - 'deny': dangerous or unparseable URLs.
+ * @param {*} url
+ * @returns {'auth'|'extension'|'external'|'deny'}
+ */
+function classifyOpenUrl(url) {
+  if (typeof url !== 'string' || !url) return 'deny';
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'deny';
+  }
+  const protocol = parsed.protocol;
+  if (protocol === 'chrome-extension:') return 'extension';
+  if (protocol === 'https:') return 'auth';
+  if (protocol === 'http:') {
+    return LOOPBACK_HOSTS.has(parsed.hostname) ? 'auth' : 'deny';
+  }
+  if (DENIED_PROTOCOLS.has(protocol)) return 'deny';
+  return 'external';
+}
+
+/**
  * Returns the main-world script that patches the extension page's chrome.*
  * surface with the identity/tabs shims. The shim delegates to
  * window.__tflExtensionBridge, which the preload exposes from the main process.
@@ -173,6 +205,7 @@ function buildShimSource() {
 module.exports = {
   DEFAULT_REDIRECT_HOST,
   buildShimSource,
+  classifyOpenUrl,
   extensionIdFromUrl,
   isAuthorizedRedirect,
   isValidAuthUrl,

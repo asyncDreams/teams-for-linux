@@ -23,6 +23,7 @@ const {
 } = require('./manifest');
 const {
   buildShimSource,
+  classifyOpenUrl,
   extensionIdFromUrl,
   isAuthorizedRedirect,
   isValidAuthUrl,
@@ -386,6 +387,19 @@ class ExtensionManager {
   #openExtensionPage(record, relPath, title, dimensions) {
     const url = extensionPageUrl(record.id, relPath);
     if (!url) throw new Error('Invalid extension page path');
+    return this.#createExtensionChildWindow(url, title, dimensions);
+  }
+
+  /**
+   * Creates a window that shares the Teams partition and carries the identity
+   * shim. Used for extension popups/options and for sign-in windows opened from
+   * them, so OAuth cookies land in the same session the extension uses.
+   * @param {string} url
+   * @param {string} title
+   * @param {{width: number, height: number}} dimensions
+   * @returns {BrowserWindow}
+   */
+  #createExtensionChildWindow(url, title, dimensions) {
     const partition = this.#config?.partition || 'persist:teams-4-linux';
     const shimEnabled = this.#identityShimEnabled();
     const window = new BrowserWindow({
@@ -407,8 +421,49 @@ class ExtensionManager {
         });
       });
     }
+    // Route window.open from extension pages (e.g. a popup's "Sign in" button)
+    // into an in-app window in the same partition, and hand custom protocols
+    // (otter://, msteams://) to the OS so the native handler can finish the flow.
+    window.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+      const kind = classifyOpenUrl(targetUrl);
+      if (kind === 'auth' || kind === 'extension') {
+        this.#openAuthWindow(targetUrl);
+        return { action: 'deny' };
+      }
+      if (kind === 'external') {
+        shell.openExternal(targetUrl).catch(() => {
+          // Best effort; the OS may not have a handler registered.
+        });
+        return { action: 'deny' };
+      }
+      return { action: 'deny' };
+    });
+    // A deep link such as otter:// on the callback page is a navigation, not a
+    // window.open; intercept it and hand it to the OS handler.
+    window.webContents.on('will-navigate', (event, targetUrl) => {
+      if (classifyOpenUrl(targetUrl) === 'external') {
+        event.preventDefault();
+        shell.openExternal(targetUrl).catch(() => {
+          // Best effort; the OS may not have a handler registered.
+        });
+      }
+    });
     window.loadURL(url);
     return window;
+  }
+
+  /**
+   * Opens an in-app sign-in window in the Teams partition so OAuth sessions and
+   * cookies are shared with the extension. https and chrome-extension URLs are
+   * accepted; everything else is rejected.
+   * @param {string} url
+   * @returns {BrowserWindow}
+   */
+  #openAuthWindow(url) {
+    if (classifyOpenUrl(url) === 'deny') {
+      throw new Error('Refusing to open an unsafe sign-in url');
+    }
+    return this.#createExtensionChildWindow(url, 'Sign in', { width: 900, height: 700 });
   }
 
   /**
@@ -475,18 +530,26 @@ class ExtensionManager {
   }
 
   /**
-   * Opens a URL from chrome.tabs.create in the system browser. Only https (or
-   * loopback http) is permitted so an extension cannot pivot to a local scheme.
+   * Opens a URL from chrome.tabs.create in-app so OAuth cookies land in the
+   * Teams partition the extension uses (a system-browser tab would put the
+   * session somewhere the extension can never see). https and chrome-extension
+   * URLs open in-app; custom protocols (otter://, msteams://) are handed to the
+   * OS; everything else is rejected.
    * @param {object} details { url }
    * @returns {Promise<object>}
    */
   async #tabsCreate(details) {
     const url = typeof details?.url === 'string' ? details.url : null;
-    if (!isValidAuthUrl(url)) {
-      throw new Error('tabs.create requires an https url');
+    const kind = classifyOpenUrl(url);
+    if (kind === 'auth' || kind === 'extension') {
+      this.#openAuthWindow(url);
+      return { id: Date.now(), windowId: 1 };
     }
-    await shell.openExternal(url);
-    return { id: Date.now(), windowId: 1 };
+    if (kind === 'external') {
+      await shell.openExternal(url);
+      return { id: Date.now(), windowId: 1 };
+    }
+    throw new Error('tabs.create requires a safe url');
   }
 
   async reload(id) {

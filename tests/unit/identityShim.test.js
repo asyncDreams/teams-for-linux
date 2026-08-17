@@ -4,6 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildShimSource,
+  classifyOpenUrl,
   extensionIdFromUrl,
   isAuthorizedRedirect,
   isValidAuthUrl,
@@ -84,6 +85,39 @@ describe('redirectMatches', () => {
   });
   it('matches chrome-extension redirects', () => {
     assert.equal(redirectMatches('chrome-extension://abcd/callback', 'chrome-extension://abcd/callback?code=1'), true);
+  });
+});
+
+describe('classifyOpenUrl', () => {
+  it('classifies https as auth so sign-in opens in-app', () => {
+    assert.equal(classifyOpenUrl('https://otter.ai/signin?utm_source=chrome_extension'), 'auth');
+    assert.equal(classifyOpenUrl('https://accounts.google.com/o/oauth2/v2/auth'), 'auth');
+  });
+
+  it('classifies loopback http as auth and non-loopback http as deny', () => {
+    assert.equal(classifyOpenUrl('http://localhost:3000/authorize'), 'auth');
+    assert.equal(classifyOpenUrl('http://127.0.0.1:8080/cb'), 'auth');
+    assert.equal(classifyOpenUrl('http://evil.example.com/authorize'), 'deny');
+  });
+
+  it('classifies chrome-extension pages as in-app extension urls', () => {
+    assert.equal(classifyOpenUrl('chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup.html'), 'extension');
+  });
+
+  it('classifies custom schemes as external so the OS handler can finish the flow', () => {
+    assert.equal(classifyOpenUrl('otter://callback?code=abc'), 'external');
+    assert.equal(classifyOpenUrl('msteams://l/meetup-join/abc'), 'external');
+    assert.equal(classifyOpenUrl('mailto:user@example.com'), 'external');
+  });
+
+  it('denies dangerous and unparseable urls', () => {
+    assert.equal(classifyOpenUrl('javascript:alert(1)'), 'deny');
+    assert.equal(classifyOpenUrl('file:///etc/passwd'), 'deny');
+    assert.equal(classifyOpenUrl('data:text/html,hi'), 'deny');
+    assert.equal(classifyOpenUrl('about:blank'), 'deny');
+    assert.equal(classifyOpenUrl('not a url'), 'deny');
+    assert.equal(classifyOpenUrl(null), 'deny');
+    assert.equal(classifyOpenUrl(''), 'deny');
   });
 });
 
