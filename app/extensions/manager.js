@@ -25,6 +25,7 @@ const {
   buildShimSource,
   classifyOpenUrl,
   extensionIdFromUrl,
+  isAuthCompleteHost,
   isAuthorizedRedirect,
   isValidAuthUrl,
   redirectMatches,
@@ -214,6 +215,9 @@ class ExtensionManager {
       enabled: shim.enabled === true,
       allowedRedirectHosts: Array.isArray(shim.allowedRedirectHosts)
         ? shim.allowedRedirectHosts.map(String)
+        : [],
+      authCompleteHosts: Array.isArray(shim.authCompleteHosts)
+        ? shim.authCompleteHosts.map(String)
         : [],
     };
   }
@@ -448,8 +452,46 @@ class ExtensionManager {
         });
       }
     });
+    // When the OAuth flow lands on an auth-complete host (e.g. otter.ai/callback
+    // after Google sign-in), the provider has set the session cookie in this
+    // partition. Reload the loaded extensions so they pick it up immediately
+    // instead of waiting for a manual reload. Only fires when the shim is on and
+    // authCompleteHosts is configured.
+    const authCompleteHosts = this.#identityShimConfig().authCompleteHosts;
+    if (authCompleteHosts.length > 0) {
+      window.webContents.on('did-navigate', (_event, targetUrl) => {
+        if (isAuthCompleteHost(targetUrl, authCompleteHosts)) {
+          this.#recordShimDiagnostic('auth callback reached; reloading extensions');
+          this.#reloadLoadedExtensions().catch(() => {
+            // Best effort; a failing reload must never break the window.
+          });
+        }
+      });
+    }
     window.loadURL(url);
     return window;
+  }
+
+  /**
+   * Reloads every currently-loaded extension so it re-reads session cookies
+   * after an OAuth callback completes. Failures are isolated per extension.
+   * @returns {Promise<void>}
+   */
+  async #reloadLoadedExtensions() {
+    const records = Array.from(this.#loaded.values()).filter((record) => record.loaded && record.path);
+    for (const record of records) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.reload(record.id);
+      } catch (error) {
+        record.lastError = error.message;
+        this.#loaded.set(record.id, record);
+        console.warn('[Extensions] Reload after auth failed', {
+          id: record.id,
+          message: error.message,
+        });
+      }
+    }
   }
 
   /**

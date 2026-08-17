@@ -109,6 +109,31 @@ function isAuthorizedRedirect(redirectUrl, allowedHosts = [DEFAULT_REDIRECT_HOST
 }
 
 /**
+ * Returns true when `url` is a main-frame navigation to an auth-complete host
+ * (for example otter.ai/callback after Google OAuth). Host matching is exact or
+ * subdomain, case-insensitive. Used to reload the extension once sign-in lands
+ * so it picks up the freshly-set session cookie.
+ * @param {*} url
+ * @param {string[]} hosts
+ * @returns {boolean}
+ */
+function isAuthCompleteHost(url, hosts = []) {
+  if (typeof url !== 'string' || !url) return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  return hosts.some((candidate) => {
+    const normalized = String(candidate || '').toLowerCase().replace(/^\./, '');
+    if (!normalized) return false;
+    return host === normalized || host.endsWith(`.${normalized}`);
+  });
+}
+
+/**
  * Classifies a URL an extension asked to open (window.open / tabs.create).
  *
  * - 'auth': https (or loopback http) -> open in-app in the Teams partition so
@@ -207,6 +232,7 @@ module.exports = {
   buildShimSource,
   classifyOpenUrl,
   extensionIdFromUrl,
+  isAuthCompleteHost,
   isAuthorizedRedirect,
   isValidAuthUrl,
   redirectMatches,

@@ -1250,6 +1250,7 @@ module.exports = {
           identityShim: {
             enabled: false,
             allowedRedirectHosts: ["chromiumapp.org"],
+            authCompleteHosts: ["otter.ai"],
           },
         },
         describe:
@@ -1283,6 +1284,10 @@ module.exports = {
           "identityShim.allowedRedirectHosts": {
             type: "array",
             describe: "HTTPS hosts allowed as chrome.identity redirect targets (e.g. chromiumapp.org).",
+          },
+          "identityShim.authCompleteHosts": {
+            type: "array",
+            describe: "Hosts that mark an OAuth sign-in as complete (e.g. otter.ai). When a sign-in window lands on one, loaded extensions are reloaded so they pick up the freshly-set session cookie immediately.",
           },
         },
         applyMode: "restart",

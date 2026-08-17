@@ -6,6 +6,7 @@ const {
   buildShimSource,
   classifyOpenUrl,
   extensionIdFromUrl,
+  isAuthCompleteHost,
   isAuthorizedRedirect,
   isValidAuthUrl,
   redirectMatches,
@@ -118,6 +119,25 @@ describe('classifyOpenUrl', () => {
     assert.equal(classifyOpenUrl('not a url'), 'deny');
     assert.equal(classifyOpenUrl(null), 'deny');
     assert.equal(classifyOpenUrl(''), 'deny');
+  });
+});
+
+describe('isAuthCompleteHost', () => {
+  it('matches the exact host and subdomains, ignoring query strings', () => {
+    assert.equal(isAuthCompleteHost('https://otter.ai/callback?code=abc', ['otter.ai']), true);
+    assert.equal(isAuthCompleteHost('https://auth.otter.ai/cb', ['otter.ai']), true);
+  });
+
+  it('is case-insensitive and tolerates a leading dot', () => {
+    assert.equal(isAuthCompleteHost('https://OTTER.AI/callback', ['otter.ai']), true);
+    assert.equal(isAuthCompleteHost('https://otter.ai/cb', ['.otter.ai']), true);
+  });
+
+  it('rejects unrelated hosts, other schemes, and empty config', () => {
+    assert.equal(isAuthCompleteHost('https://evil.example.com/callback', ['otter.ai']), false);
+    assert.equal(isAuthCompleteHost('https://otter.ai/callback', []), false);
+    assert.equal(isAuthCompleteHost('file:///etc/passwd', ['otter.ai']), false);
+    assert.equal(isAuthCompleteHost(null, ['otter.ai']), false);
   });
 });
 
