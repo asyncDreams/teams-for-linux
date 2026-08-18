@@ -21,10 +21,12 @@ const { sanitize: sanitizePii } = require("./utils/logSanitizer");
 const { register: registerGlobalShortcuts, sendKeyboardEventToWindow } = require("./globalShortcuts");
 const CommandLineManager = require("./startup/commandLine");
 const NotificationService = require("./notifications/service");
+const NotificationHistoryService = require("./notifications/history");
 const CustomNotificationManager = require("./notificationSystem");
 const DownloadManager = require("./downloadManager");
 const QuickChatManager = require("./quickChat");
 const ScreenSharingService = require("./screenSharing/service");
+const { LinuxMediaControls } = require("./linux/mediaControls");
 const PartitionsManager = require("./partitions/manager");
 const ProfilesManager = require("./profilesManager");
 const ProfileViewManager = require("./mainAppWindow/profileViewManager");
@@ -33,6 +35,8 @@ const AutoUpdater = require("./autoUpdater");
 const WebAuthn = require("./webauthn");
 const os = require("node:os");
 const isMac = os.platform() === "darwin";
+
+const perf = require("./utils/perf");
 
 const { NETWORK_ERROR_PATTERNS } = require("./config/defaults");
 
@@ -79,7 +83,9 @@ if (process.env.E2E_USER_DATA_DIR) {
 }
 
 // This must be executed before loading the config file.
+perf.mark("index:enter");
 CommandLineManager.addSwitchesBeforeConfigLoad();
+perf.mark("index:switchesBeforeConfig");
 
 const { AppConfiguration } = require("./appConfiguration");
 const appConfig = new AppConfiguration(
@@ -90,7 +96,9 @@ const appConfig = new AppConfiguration(
 const config = appConfig.startupConfig;
 config.appPath = path.join(__dirname, app.isPackaged ? "../../" : "");
 
+perf.mark("index:configLoaded");
 CommandLineManager.addSwitchesAfterConfigLoad(config);
+perf.mark("index:switchesAfterConfig");
 
 // ADR-020: multi-account is mutually exclusive with Intune MAM.
 // The Linux D-Bus Microsoft Identity Broker has undocumented behavior
@@ -112,6 +120,15 @@ let mqttMediaStatusService = null;
 let haDiscovery = null;
 let graphApiClient = null;
 let quickChatManager = null;
+let presenceDiagnostics = {
+  enabled: false,
+  current: null,
+  pending: null,
+  activeProviders: [],
+  lastSyncAt: null,
+  providers: [],
+  lastTransitionAt: null,
+};
 
 const { createPlayer } = require("./audio/player");
 const player = createPlayer();
@@ -124,15 +141,22 @@ const mainAppWindow = require("./mainAppWindow");
 
 // Injected into NotificationService to break coupling
 const getUserStatus = () => userStatus;
+const notificationHistoryService = new NotificationHistoryService(
+  app.getPath("userData"),
+  config.notifications?.history
+);
 
 const notificationService = new NotificationService(
   player,
   config,
   mainAppWindow,
-  getUserStatus
+  getUserStatus,
+  null,
+  notificationHistoryService
 );
 
 const screenSharingService = new ScreenSharingService();
+const linuxMediaControls = new LinuxMediaControls(config, () => mainAppWindow.getWindow());
 
 const partitionsManager = new PartitionsManager(appConfig.settingsStore);
 
@@ -146,8 +170,11 @@ const profilesManager = new ProfilesManager(appConfig.settingsStore);
 // multi-account flag is on; the manager is wired to the main window
 // after `mainAppWindow.onAppReady` resolves.
 let profileViewManager = null;
+let extensionManager = null;
 
 const idleMonitor = new IdleMonitor(config, getUserStatus);
+const ExtensionManager = require("./extensions/manager");
+
 
 const customNotificationManager = new CustomNotificationManager(config, mainAppWindow);
 
@@ -195,14 +222,22 @@ if (!app.isDefaultProtocolClient(protocolClient, process.execPath)) {
 
 if (gotTheLock) {
   app.on("second-instance", mainAppWindow.onAppSecondInstance);
+  app.once("ready", () => perf.mark("app:ready"));
   app.on("ready", handleAppReady);
   app.on("quit", () => console.debug("quit"));
   app.on("render-process-gone", onRenderProcessGone);
   app.on("will-quit", async () => {
+    perf.stopMemorySampling();
     console.debug("will-quit");
     if (mqttClient) {
       await mqttClient.disconnect();
     }
+  });
+
+  // Flush any debounced notification-history writes so a trailing burst of
+  // notifications is persisted before the process exits.
+  app.on("before-quit", () => {
+    notificationHistoryService.flush();
   });
   app.on("certificate-error", handleCertificateError);
   app.on("browser-window-focus", handleGlobalShortcutDisabled);
@@ -252,6 +287,7 @@ if (gotTheLock) {
   });
 
   notificationService.initialize();
+  notificationHistoryService.initialize();
   screenSharingService.initialize();
   partitionsManager.initialize();
 
@@ -266,6 +302,14 @@ if (gotTheLock) {
   ipcMain.handle("user-status-changed", userStatusChangedHandler);
   // Set application badge count (dock/taskbar notification)
   ipcMain.handle("set-badge-count", setBadgeCountHandler);
+
+  // Receive the optional unified presence result from the Teams renderer.
+  // The payload is reduced to status/provider diagnostics before it is retained.
+  ipcMain.on("presence-sync-update", (_event, data) => {
+    presenceDiagnostics = sanitizePresenceDiagnostics(data);
+  });
+  // Return the last unified presence snapshot to the diagnostics window.
+  ipcMain.handle("presence-sync-get-diagnostics", async () => presenceDiagnostics);
 
   // Update Dock icon with status overlay on macOS
   ipcMain.on("dock-icon-update", (_event, dataUrl) => {
@@ -303,6 +347,24 @@ if (gotTheLock) {
       console.debug("Navigating forward");
       webContents.navigationHistory.goForward();
     }
+  });
+
+  // Open a notification-history entry in the main window. Resolves the entry's
+  // deep link (chat/meeting/channel), marks it read, and focuses Teams.
+  ipcMain.handle("notification-history-open", (_event, id) => {
+    const entry = notificationHistoryService.getById(id);
+    if (entry) {
+      notificationHistoryService.markRead(id);
+      const deepLink = typeof entry.deepLink === "string" ? entry.deepLink : null;
+      if (deepLink) {
+        mainAppWindow.navigateToTeamsUrl(deepLink);
+      } else {
+        mainAppWindow.restoreWindow();
+      }
+      return Boolean(deepLink);
+    }
+    mainAppWindow.restoreWindow();
+    return false;
   });
 
   // Get current navigation state (can go back/forward)
@@ -626,6 +688,47 @@ function loadMenuToggleSettings() {
       config[setting] = appConfig.legacyConfigStore.get(setting);
     }
   }
+  // notifications object toggles (grouping/actions/avatar) — live toggles
+  if (appConfig.legacyConfigStore.has('notifications')) {
+    const stored = appConfig.legacyConfigStore.get('notifications');
+    if (stored && typeof stored === 'object') {
+      config.notifications = { ...(config.notifications || {}), ...stored };
+      if (stored.electron && typeof stored.electron === 'object') {
+        config.notifications.electron = {
+          ...(config.notifications.electron || {}),
+          ...stored.electron,
+        };
+      }
+    }
+  }
+  // Extension master-toggle selections are persisted in the legacy settings
+  // store so the manager UI can enable the feature without manual JSON edits.
+  if (appConfig.legacyConfigStore.has('extensions')) {
+    const stored = appConfig.legacyConfigStore.get('extensions');
+    if (stored && typeof stored === 'object') {
+      config.extensions = { ...(config.extensions || {}), ...stored };
+    }
+  }
+  // Presence menu selections are persisted in the legacy settings store so
+  // the Debug menu remains live without requiring a config-file edit.
+  if (appConfig.legacyConfigStore.has('presence')) {
+    const stored = appConfig.legacyConfigStore.get('presence');
+    if (stored && typeof stored === 'object') {
+      config.presence = { ...(config.presence || {}), ...stored };
+      if (stored.businessHours && typeof stored.businessHours === 'object') {
+        config.presence.businessHours = {
+          ...(config.presence.businessHours || {}),
+          ...stored.businessHours,
+        };
+      }
+      if (stored.graphPoll && typeof stored.graphPoll === 'object') {
+        config.presence.graphPoll = {
+          ...(config.presence.graphPoll || {}),
+          ...stored.graphPoll,
+        };
+      }
+    }
+  }
 }
 
 function initializeGraphApiClient() {
@@ -638,6 +741,11 @@ function initializeGraphApiClient() {
     console.debug("[GRAPH_API] Graph API client initialized with main window");
   } else {
     console.warn("[GRAPH_API] Main window not available, Graph API client not fully initialized");
+  }
+  // Wire Graph client into the notification service so Reply actions can call
+  // Graph sendChatMessage; service gracefully falls back to deepLink when absent.
+  if (graphApiClient && typeof notificationService.setGraphApiClient === "function") {
+    notificationService.setGraphApiClient(graphApiClient);
   }
 }
 
@@ -687,7 +795,9 @@ function initializeAutoUpdater() {
 
 async function handleAppReady() {
   try {
+    perf.mark("handleAppReady:enter");
     await showConfigurationDialogs();
+    perf.mark("handleAppReady:dialogsDone");
 
     process.on("SIGTRAP", onAppTerminated);
     process.on("SIGINT", onAppTerminated);
@@ -695,18 +805,22 @@ async function handleAppReady() {
     process.stdout.on("error", () => {});
 
     initializeCacheManagement();
+    perf.mark("handleAppReady:cacheInit");
 
     if (config.mqtt?.enabled) {
       initializeMqtt();
     }
+    perf.mark("handleAppReady:mqttInit");
 
     loadMenuToggleSettings();
+    notificationHistoryService.setOptions(config.notifications?.history);
 
     const customBackground = new CustomBackground(app, config);
     customBackground.initialize();
 
     const customStickers = new CustomStickers(app, config);
     customStickers.initialize();
+    perf.mark("handleAppReady:customInit");
 
     // Smartcard / NSS client-certificate PIN dialog (Linux only, issue #2639).
     // Registered before the main window loads so the handler exists before the
@@ -719,8 +833,13 @@ async function handleAppReady() {
     // so it covers the very first TLS handshake, and before profile partitions
     // exist so their sessions are caught by the session-created listener.
     certificateModule.installCertificateVerifyProc(config, app, session.defaultSession);
+    perf.mark("handleAppReady:certInit");
 
     await mainAppWindow.onAppReady(appConfig, customBackground, screenSharingService, profilesManager);
+    linuxMediaControls.initialize();
+    // Keep the tray tooltip unread badge in sync with local notification history.
+    mainAppWindow.setNotificationHistoryService(notificationHistoryService);
+    perf.mark("handleAppReady:mainWindowReady");
 
     // Wire per-profile WebContentsView lifecycle once the main window
     // exists. Bootstrap Profile 0 from the legacy partition so a
@@ -743,23 +862,43 @@ async function handleAppReady() {
       }
     }
 
+    // Optional Chromium extensions (CRX and unpacked), off by default
+    try {
+      extensionManager = new ExtensionManager(
+        config,
+        appConfig.settingsStore,
+        appConfig.legacyConfigStore,
+      );
+      await extensionManager.initialize();
+    } catch (e) { console.warn('[Extensions] init failed', e.message); }
     if (process.platform === "linux" && config.auth?.webauthn?.enabled) {
       await WebAuthn.initialize(mainAppWindow.getWindow(), config);
     }
+    perf.mark("handleAppReady:webauthnInit");
 
     initializeGraphApiClient();
     registerGraphApiHandlers(ipcMain, graphApiClient);
     initializeQuickChat();
     registerGlobalShortcuts(config, mainAppWindow, app);
     initializeAutoUpdater();
+    perf.mark("handleAppReady:graphQuickChatShortcuts");
 
     // Attach the download manager after the partition is provisioned by the
     // main window. Issue #2512: without this, file downloads from Teams are
     // silent and the user gets no completion feedback.
     downloadManager.initialize(session.fromPartition(config.partition));
+    perf.mark("handleAppReady:downloadInit");
 
     console.info('[IPC Security] Channel allowlisting enabled');
     console.info(`[IPC Security] ${allowedChannels.size} channels allowlisted`);
+    perf.mark("handleAppReady:ready");
+    perf.sampleMemory("ready");
+    // Opt-in periodic memory sampling — enabled when file logging is on so
+    // diagnostics include a 5-minute RSS/heap snapshot without spamming
+    // console-only runs. Interval is fixed to avoid a new config knob in 0C.
+    if (config.logConfig?.transports?.file?.level) {
+      perf.startMemorySampling(5 * 60 * 1000);
+    }
   } catch (error) {
     console.error('[STARTUP] Fatal error during app initialization:', { message: error.message, stack: error.stack });
     app.quit();
@@ -791,6 +930,47 @@ async function requestMediaAccess() {
       `mac permission ${permission} asked current status ${status}`
     );
   }
+}
+
+function sanitizePresenceDiagnostics(data) {
+  const validProviders = new Set(['explicit', 'dom', 'graph', 'calendar', 'meeting', 'presenting']);
+  const validKinds = new Set(['explicit', 'dnd', 'busy', 'meeting', 'calendar', 'presenting', 'available', 'dom', 'graph', 'away', 'brb', 'unknown']);
+  const sanitizeState = (state) => {
+    if (!state || !Number.isInteger(state.status) || state.status < 1 || state.status > 5) return null;
+    return {
+      status: state.status,
+      label: typeof state.label === 'string' ? state.label.slice(0, 64) : null,
+      source: typeof state.source === 'string' ? state.source.slice(0, 64) : null,
+      kind: validKinds.has(state.kind) ? state.kind : 'unknown',
+      provider: validProviders.has(state.provider) ? state.provider : null,
+      updatedAt: Number.isFinite(state.updatedAt) ? state.updatedAt : null,
+    };
+  };
+  const providers = Array.isArray(data?.providers) ? data.providers
+    .filter((provider) => validProviders.has(provider?.name))
+    .map((provider) => ({
+      name: provider.name,
+      active: provider.active === true,
+      status: Number.isInteger(provider.status) && provider.status >= 1 && provider.status <= 5 ? provider.status : null,
+      label: typeof provider.label === 'string' ? provider.label.slice(0, 64) : null,
+      source: typeof provider.source === 'string' ? provider.source.slice(0, 64) : null,
+      kind: validKinds.has(provider.kind) ? provider.kind : null,
+      lastSyncAt: Number.isFinite(provider.lastSyncAt) ? provider.lastSyncAt : null,
+      lastError: typeof provider.lastError === 'string' ? provider.lastError.slice(0, 64) : null,
+      failureCount: Number.isInteger(provider.failureCount) && provider.failureCount >= 0 ? provider.failureCount : 0,
+      retryAt: Number.isFinite(provider.retryAt) ? provider.retryAt : null,
+    })) : [];
+  return {
+    enabled: data?.enabled === true,
+    current: sanitizeState(data?.current),
+    pending: sanitizeState(data?.pending),
+    activeProviders: Array.isArray(data?.activeProviders)
+      ? data.activeProviders.filter((provider) => validProviders.has(provider))
+      : [],
+    lastSyncAt: Number.isFinite(data?.lastSyncAt) ? data.lastSyncAt : null,
+    providers,
+    lastTransitionAt: Number.isFinite(data?.lastTransitionAt) ? data.lastTransitionAt : null,
+  };
 }
 
 async function userStatusChangedHandler(_event, options) {

@@ -1,0 +1,58 @@
+:root {
+  --tfl-accent: #5b5bd6;
+  --tfl-accent-strong: #4647b8;
+  --tfl-accent-soft: rgba(91, 91, 214, .11);
+  --tfl-surface: #ffffff;
+  --tfl-surface-subtle: #f7f7fb;
+  --tfl-border: rgba(36, 36, 64, .14);
+  --tfl-text: #242432;
+  --tfl-text-muted: #626276;
+  --tfl-radius-sm: 7px;
+  --tfl-radius-md: 12px;
+  --tfl-shadow-2: 0 2px 8px rgba(30, 30, 60, .10);
+  --tfl-shadow-8: 0 12px 32px rgba(30, 30, 60, .14);
+  color: var(--tfl-text);
+  background: var(--tfl-surface-subtle);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tfl-surface: #292934;
+    --tfl-surface-subtle: #1d1d25;
+    --tfl-border: rgba(235, 235, 255, .16);
+    --tfl-text: #f4f4fb;
+    --tfl-text-muted: #b5b5c8;
+    --tfl-shadow-2: 0 2px 8px rgba(0, 0, 0, .26);
+    --tfl-shadow-8: 0 12px 32px rgba(0, 0, 0, .34);
+  }
+}
+
+button,
+input,
+select {
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--tfl-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

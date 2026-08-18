@@ -64,6 +64,23 @@ module.exports = {
         },
         applyMode: "restart",
       },
+      linux: {
+        default: {
+          mediaControls: {
+            enabled: false,
+          },
+        },
+        describe:
+          "Linux desktop integration. mediaControls is an opt-in Linux media-control bridge.",
+        type: "object",
+        fields: {
+          "mediaControls.enabled": {
+            type: "boolean",
+            describe: "Expose Linux media/call controls through the desktop integration bridge. Off by default.",
+          },
+        },
+        applyMode: "restart",
+      },
       appIcon: {
         default: "",
         describe: "Teams app icon to show in the tray",
@@ -386,9 +403,17 @@ module.exports = {
           electron: {
             clickAction: "show",
           },
+          grouping: false,
+          actions: false,
+          avatar: false,
+          suppressInApp: true,
+          history: {
+            enabled: false,
+            retentionDays: 30,
+          },
         },
         describe:
-          "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing).",
+          "Notification behaviour. timeoutType: how long notifications stay in the system notification center (Linux/Windows only). Choices: `default` (auto-clear per system policy) or `never` (persist until the user dismisses, useful on GNOME and other desktops that auto-remove notifications). Mirrors Electron's Notification timeoutType. May not be honoured by every notification daemon. electron.clickAction: what clicking a notification does to the main window when notificationMethod is `electron`. Choices: `show` (reveal the window, default and current behaviour), `restore` (also un-minimise and focus, which helps on GNOME where a plain show does not raise the window) or `none` (do nothing). grouping: coalesce toasts by conversation/channel via Electron Notification tag (opt-in, default false for one beta). actions: show Reply/Mark as read/Open/Join buttons on Electron notifications where supported (opt-in). avatar: fetch and display sender avatar from the notification payload or Graph People photo when available (opt-in).",
         type: "object",
         fields: {
           "timeoutType": {
@@ -403,8 +428,39 @@ module.exports = {
               "What clicking an Electron notification does to the main window (notificationMethod `electron` only): `show` reveals the window (default), `restore` also un-minimises and focuses it (helps on GNOME), `none` does nothing.",
             choices: ["show", "restore", "none"],
           },
+          "grouping": {
+            type: "boolean",
+            describe:
+              "Coalesce notifications by conversation/channel via tag (when true, notifications from the same chat/channel replace each other). Off by default for one beta.",
+          },
+          "actions": {
+            type: "boolean",
+            describe:
+              "Show actionable buttons (Reply / Mark as read / Open / Join) on Electron notifications where supported. Off by default for one beta.",
+          },
+          "avatar": {
+            type: "boolean",
+            describe:
+              "Fetch and display sender avatar in notifications when available (uses notification payload icon or Graph People photo). Off by default.",
+          },
+          "suppressInApp": {
+            type: "boolean",
+            describe:
+              "Hide Teams' built-in in-app toast/banner when an OS notification is shown (prevents double toast). On by default.",
+          },
+          "history.enabled": {
+            type: "boolean",
+            describe:
+              "Persist a local notification timeline and expose it through View > Notification History. Off by default.",
+          },
+          "history.retentionDays": {
+            type: "number",
+            describe:
+              "Notification history retention: 7, 30, or 90 days; 0 keeps entries until manually cleared.",
+            choices: [7, 30, 90, 0],
+          },
         },
-        applyMode: "restart",
+        applyMode: "live",
       },
       disableBadgeCount: {
         default: false,
@@ -638,11 +694,11 @@ module.exports = {
       },
       msTeamsProtocols: {
         default: {
-          v1: "^msteams:/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)",
-          v2: String.raw`^msteams://teams\.(?:microsoft\.com|live\.com|cloud\.microsoft)/(?:meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)`,
+          v1: defaults.MS_TEAMS_PROTOCOL_V1,
+          v2: defaults.msTeamsProtocolV2,
         },
         describe:
-          "Regular expressions for Microsoft Teams protocol links (v1 and v2).",
+          "Regular expressions for Microsoft Teams protocol links (v1 and v2). Derived from the Teams host table in defaults.js — host set is not configured directly here.",
         type: "object",
         fields: {
           "v1": {
@@ -664,6 +720,22 @@ module.exports = {
         type: "string",
         applyMode: "restart",
       },
+      hosts: {
+        default: {
+          autoRedirect: true,
+        },
+        describe:
+          "Teams host handling. autoRedirect: when true (the default), navigating to a legacy Teams host (teams.microsoft.com / teams.live.com) is normalized to the canonical host teams.cloud.microsoft, preserving path, search, and hash. Set false to keep legacy hosts verbatim — useful if a conditional-access rule is pinned to the old host. MCAS-proxied hosts (*.mcas.ms) are never rewritten.",
+        type: "object",
+        fields: {
+          "autoRedirect": {
+            type: "boolean",
+            describe:
+              "Normalize legacy Teams hosts to the canonical host on navigation. When false, legacy hosts are left as-is.",
+          },
+        },
+        applyMode: "restart",
+      },
       useMutationTitleLogic: {
         default: true,
         describe: "Use MutationObserver to update counter from title",
@@ -682,6 +754,122 @@ module.exports = {
         type: "boolean",
         applyMode: "restart",
       },
+      presence: {
+        default: {
+          graphPoll: {
+            enabled: false,
+            intervalMs: 60000,
+          },
+          sync: {
+            enabled: false,
+            debounceMs: 400,
+            providerTtlMs: 120000,
+            calendar: {
+              enabled: false,
+              preBusy: false,
+              reminderMinutes: 5,
+              pollIntervalMs: 60000,
+            },
+          },
+          keepAlwaysOnline: false,
+          keepAlwaysOnlineMode: "disabled",
+          businessHours: {
+            enabled: false,
+            startTime: "09:00",
+            endTime: "17:00",
+            weekdays: [1, 2, 3, 4, 5],
+            timezone: "",
+          },
+          smartPresence: false,
+        },
+        describe:
+          "Presence sync configuration. sync.enabled: opt-in reconciliation of Teams DOM, Graph, meeting, presentation, and optional calendar signals; disabled by default. sync.debounceMs: suppress short-lived conflicting transitions. sync.providerTtlMs: how long a provider result remains usable. sync.calendar.enabled: optionally poll Graph calendar; sync.calendar.preBusy: optionally derive Busy shortly before an event; sync.calendar.reminderMinutes: pre-busy lead time. graphPoll.enabled: when true and graphApi.enabled is also true, periodically poll Microsoft Graph /me/presence (requires Presence.Read consent) as a correction layer on top of the DOM scrape; DOM remains the primary real-time source. graphPoll.intervalMs: poll interval in milliseconds (default 60s). keepAlwaysOnlineMode: disabled, always, or business-hours; disabled by default. businessHours: local schedule used by business-hours mode, with ISO weekday numbers 1 (Monday) through 7 (Sunday), a configured IANA timezone, and support for overnight windows. smartPresence: when true, keep-online nudges yield to meetings, calls, presenting, DND, and explicit Busy. The legacy keepAlwaysOnline boolean remains supported as an alias for always.",
+        type: "object",
+        fields: {
+          "graphPoll.enabled": {
+            type: "boolean",
+            describe:
+              "Enable Graph presence polling as a hybrid correction layer on top of DOM scraping; requires graphApi.enabled and Presence.Read consent, otherwise polls are skipped gracefully.",
+          },
+          "graphPoll.intervalMs": {
+            type: "number",
+            describe:
+              "Poll interval in milliseconds for Microsoft Graph /me/presence when graphPoll is enabled.",
+          },
+          "sync.enabled": {
+            type: "boolean",
+            describe:
+              "Enable the unified presence reconciliation layer. Off by default; DOM and Graph behavior remains unchanged when disabled.",
+          },
+          "sync.debounceMs": {
+            type: "number",
+            describe:
+              "Debounce conflicting provider transitions in milliseconds.",
+          },
+          "sync.providerTtlMs": {
+            type: "number",
+            describe:
+              "How long a provider result remains active before it expires.",
+          },
+          "sync.calendar.enabled": {
+            type: "boolean",
+            describe:
+              "Poll the Microsoft Graph calendar as an optional presence provider; requires Graph API access.",
+          },
+          "sync.calendar.preBusy": {
+            type: "boolean",
+            describe:
+              "Derive Busy shortly before an upcoming calendar event.",
+          },
+          "sync.calendar.reminderMinutes": {
+            type: "number",
+            describe:
+              "Minutes before a calendar event when the optional pre-busy state starts.",
+          },
+          "sync.calendar.pollIntervalMs": {
+            type: "number",
+            describe:
+              "Calendar provider poll interval in milliseconds.",
+          },
+          "keepAlwaysOnline": {
+            type: "boolean",
+            describe:
+              "Legacy alias for keepAlwaysOnlineMode=always. Kept for backwards compatibility with existing configuration files.",
+          },
+          "keepAlwaysOnlineMode": {
+            type: "string",
+            describe:
+              "Presence preservation mode. Disabled does not inject activity, Always maintains Available continuously, and Business Hours follows presence.businessHours.",
+            choices: ["disabled", "always", "business-hours"],
+          },
+          "businessHours.enabled": {
+            type: "boolean",
+            describe: "Enable the configured business-hours schedule when keepAlwaysOnlineMode is business-hours.",
+          },
+          "businessHours.startTime": {
+            type: "string",
+            describe: "Business-hours start in 24-hour HH:mm format.",
+          },
+          "businessHours.endTime": {
+            type: "string",
+            describe: "Business-hours end in 24-hour HH:mm format; overnight windows are supported.",
+          },
+          "businessHours.weekdays": {
+            type: "array",
+            describe: "ISO weekdays enabled for business-hours mode: 1 Monday through 7 Sunday.",
+          },
+          "businessHours.timezone": {
+            type: "string",
+            describe: "IANA timezone for the business-hours schedule; empty uses the operating system timezone.",
+          },
+          "smartPresence": {
+            type: "boolean",
+            describe:
+              "Yield keep-online activity injection while in a meeting/call, presenting, screen sharing, DND, or explicit Busy. Off by default.",
+          },
+        },
+        applyMode: "restart",
+      },
       media: {
         default: {
           microphone: {
@@ -696,11 +884,12 @@ module.exports = {
           },
           video: { menuEnabled: false },
           showStatusOnDockIcon: false,
+          showStatusOnTrayIcon: false,
           macPerformanceMode: true,
           preventDeviceSwitching: false,
         },
         describe:
-          "Media settings for microphone, camera, and video. showStatusOnDockIcon: overlay the user presence status on the Dock icon on macOS. macPerformanceMode: on macOS, force-enable native hardware/rendering optimizations (Metal ANGLE, GPU rasterization, hardware WebRTC codecs) at startup; defaults to true, set false to opt out without disabling the GPU entirely. preventDeviceSwitching: prevent automatic audio/video device switching by blocking device change notifications.",
+          "Media settings for microphone, camera, and video. showStatusOnDockIcon: overlay the user presence status on the Dock icon on macOS. showStatusOnTrayIcon: overlay the user presence status as a small dot on the Linux/Windows tray icon (requires trayIconEnabled). macPerformanceMode: on macOS, force-enable native hardware/rendering optimizations (Metal ANGLE, GPU rasterization, hardware WebRTC codecs) at startup; defaults to true, set false to opt out without disabling the GPU entirely. preventDeviceSwitching: prevent automatic audio/video device switching by blocking device change notifications.",
         type: "object",
         fields: {
           "microphone.disableAutogain": {
@@ -780,6 +969,11 @@ module.exports = {
             type: "boolean",
             describe:
               "Overlay the user presence status on the Dock icon on macOS.",
+          },
+          "showStatusOnTrayIcon": {
+            type: "boolean",
+            describe:
+              "Overlay the user presence status as a dot on the tray icon on Linux/Windows; requires trayIconEnabled. Off by default.",
           },
           "macPerformanceMode": {
             type: "boolean",
@@ -1042,6 +1236,58 @@ module.exports = {
             type: "boolean",
             describe:
               "Opt-in flag for the single-window multi-account profile switcher; mutually exclusive with auth.intune.enabled.",
+          },
+        },
+        applyMode: "restart",
+      },
+      extensions: {
+        default: {
+          enabled: false,
+          allowUnpacked: true,
+          allowCrx: true,
+          developerMode: false,
+          preload: [],
+          identityShim: {
+            enabled: false,
+            allowedRedirectHosts: ["chromiumapp.org"],
+            authCompleteHosts: ["otter.ai"],
+          },
+        },
+        describe:
+          "Chromium extension support (Otter.ai, Grammarly, Loom, Microsoft Editor). enabled: master flag (off by default). allowUnpacked: offer Load unpacked in the Extensions manager. allowCrx: offer CRX installation after validation. developerMode: show advanced manifest and developer actions in the manager. preload: absolute paths to unpacked extension directories loaded at startup (one string per extension). Installed CRX files are copied under <userData>/extensions and restored after restart. Requires restart for preload changes.",
+        type: "object",
+        fields: {
+          "enabled": {
+            type: "boolean",
+            describe: "Master flag for Chromium extension support (off by default); the Extensions manager can change and persist this setting at runtime.",
+          },
+          "allowUnpacked": {
+            type: "boolean",
+            describe: "Allow loading unpacked extensions via the Extensions manager.",
+          },
+          "allowCrx": {
+            type: "boolean",
+            describe: "Allow validated CRX/ZIP installation via the Extensions manager.",
+          },
+          "developerMode": {
+            type: "boolean",
+            describe: "Show advanced extension manifest and developer actions in the manager.",
+          },
+          "preload": {
+            type: "array",
+            describe: "Absolute paths to unpacked extension directories loaded at startup.",
+          },
+          "identityShim.enabled": {
+            type: "boolean",
+            describe: "Patch chrome.identity.launchWebAuthFlow and chrome.tabs.create on extension popup/options pages so OAuth sign-in flows can complete (off by default).",
+          },
+          "identityShim.allowedRedirectHosts": {
+            type: "array",
+            describe: "HTTPS hosts allowed as chrome.identity redirect targets (e.g. chromiumapp.org).",
+          },
+          "identityShim.authCompleteHosts": {
+            type: "array",
+            describe: "Hosts that mark an OAuth sign-in as complete (e.g. otter.ai). When a sign-in window lands on one, loaded extensions are reloaded so they pick up the freshly-set session cookie immediately.",
           },
         },
         applyMode: "restart",

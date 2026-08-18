@@ -93,8 +93,20 @@ function registerGraphApiHandlers(ipcMain, graphApiClient) {
     }
   });
 
+  // Presence hybrid (T2B): renderer polls this when presence.graphPoll.enabled.
+  // Thin wrapper — the client side downgrades 403/empty to "DOM only" without surfacing an error.
+  ipcMain.handle('graph-api-get-presence', async () => {
+    if (!graphApiClient) return notEnabled;
+    try {
+      return await graphApiClient.getPresence();
+    } catch (error) {
+      logger.error('[GRAPH_API] getPresence failed:', { message: error.message });
+      return { success: false, error: error.message };
+    }
+  });
+
   logger.debug('[GRAPH_API] IPC handlers registered', {
-    channels: 7,
+    channels: 8,
     enabled: !!graphApiClient
   });
 }

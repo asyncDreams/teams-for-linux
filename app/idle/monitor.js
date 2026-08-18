@@ -1,5 +1,6 @@
 const { ipcMain, powerMonitor } = require("electron");
 const fs = require("node:fs");
+const { shouldKeepOnline } = require("../presence/smartPresence");
 
 class IdleMonitor {
   // State file content values (what users write in the state file)
@@ -106,6 +107,9 @@ class IdleMonitor {
   }
 
   async #handleGetSystemIdleState() {
+    if (shouldKeepOnline(this.#config, new Date())) {
+      return { system: IdleMonitor.#SYSTEM_STATE_ACTIVE, userIdle: -1, userCurrent: this.#getUserStatus() };
+    }
 
     // If forceState is enabled, check state file for override
     if (this.#config.idleDetection?.forceState) {

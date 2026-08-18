@@ -18,6 +18,7 @@ exports = module.exports = (Menus) => ({
       label: "Return to Teams",
       click: () => Menus.returnToTeams(),
     },
+    getViewMenu(Menus),
     ...(Menus.configGroup.startupConfig.quickChat?.enabled
       ? [
           {
@@ -57,6 +58,18 @@ exports = module.exports = (Menus) => ({
           label: "Open GPU Info",
           click: () => Menus.showGpuInfo(),
         },
+        {
+          label: "Diagnostics",
+          click: () => Menus.openDiagnostics(),
+        },
+        {
+          label: "Presence",
+          submenu: getPresenceMenu(Menus),
+        },
+        {
+          label: "Linux Desktop",
+          submenu: getLinuxDesktopMenu(Menus),
+        },
       ],
     },
     {
@@ -76,6 +89,30 @@ exports = module.exports = (Menus) => ({
       click: () => Menus.about(),
     },
     getHelpMenu(Menus),
+    {
+      label: "Extensions",
+      submenu: [
+        {
+          label: "Install CRX...",
+          enabled: Menus.configGroup.startupConfig.extensions?.enabled === true
+            && Menus.configGroup.startupConfig.extensions?.allowCrx !== false,
+          click: () => Menus.installExtensionCrx(),
+        },
+        {
+          label: "Load Unpacked...",
+          enabled: Menus.configGroup.startupConfig.extensions?.enabled === true
+            && Menus.configGroup.startupConfig.extensions?.allowUnpacked !== false,
+          click: () => Menus.loadExtensionUnpacked(),
+        },
+        {
+          type: "separator",
+        },
+        {
+          label: "Manage Extensions",
+          click: () => Menus.openExtensionsManager(),
+        },
+      ],
+    },
     ...(Menus.configGroup.startupConfig.media?.video?.menuEnabled
       ? [
           {
@@ -98,6 +135,63 @@ exports = module.exports = (Menus) => ({
     },
   ],
 });
+
+function getViewMenu(Menus) {
+  return {
+    label: "View",
+    submenu: [
+      {
+        label: "Notification History",
+        click: () => Menus.openNotificationHistory(),
+      },
+    ],
+  };
+}
+
+function getPresenceMenu(Menus) {
+  const mode = Menus.configGroup.startupConfig.presence?.keepAlwaysOnlineMode
+    || (Menus.configGroup.startupConfig.presence?.keepAlwaysOnline ? "always" : "disabled");
+  return [
+    {
+      label: "Unified presence sync",
+      type: "checkbox",
+      checked: Menus.configGroup.startupConfig.presence?.sync?.enabled === true,
+      click: () => Menus.togglePresenceSync(),
+    },
+    {
+      type: "separator",
+    },
+    {
+      label: "Disabled",
+      type: "radio",
+      checked: mode === "disabled",
+      click: () => Menus.setKeepAlwaysOnlineMode("disabled"),
+    },
+    {
+      label: "Always",
+      type: "radio",
+      checked: mode === "always",
+      click: () => Menus.setKeepAlwaysOnlineMode("always"),
+    },
+    {
+      label: "Business Hours",
+      type: "radio",
+      checked: mode === "business-hours",
+      click: () => Menus.setKeepAlwaysOnlineMode("business-hours"),
+    },
+  ];
+}
+
+function getLinuxDesktopMenu(Menus) {
+  return [
+    {
+      label: "Linux media controls",
+      type: "checkbox",
+      checked: Menus.configGroup.startupConfig.linux?.mediaControls?.enabled === true,
+      click: () => Menus.toggleLinuxMediaControls(),
+    },
+  ];
+}
 
 function getSettingsMenu(Menus) {
   return {
@@ -162,6 +256,27 @@ function getNotificationsMenu(Menus) {
         type: "checkbox",
         checked: Menus.configGroup.startupConfig.disableBadgeCount,
         click: () => Menus.toggleDisableBadgeCount(),
+      },
+      {
+        type: "separator",
+      },
+      {
+        label: "Group by conversation",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.grouping,
+        click: () => Menus.toggleNotificationGrouping(),
+      },
+      {
+        label: "Show notification actions",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.actions,
+        click: () => Menus.toggleNotificationActions(),
+      },
+      {
+        label: "Show sender avatar",
+        type: "checkbox",
+        checked: !!Menus.configGroup.startupConfig.notifications?.avatar,
+        click: () => Menus.toggleNotificationAvatar(),
       },
       {
         label: "Urgency",

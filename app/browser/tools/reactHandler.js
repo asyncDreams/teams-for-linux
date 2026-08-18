@@ -272,38 +272,29 @@ class ReactHandler {
   }
 
   /**
-   * Returns true if hostname is exactly allowed, or an immediate subdomain.
-   * Prevents subdomain hijacking attacks by validating domain endings properly.
+   * Returns true if hostname denotes a Teams host (canonical, legacy, regional,
+   * or MCAS-wrapped). Delegates to the central host table in app/config/defaults.js
+   * so a host-table change does not require a second patch here. The table's
+   * isTeamsHost is MCAS-aware and tolerates any-depth subdomains + regional
+   * teams.*.cloud.microsoft, which is intentionally more permissive than the
+   * previous single-label check — deeper subdomains are still under Microsoft's
+   * DNS and the strict check incorrectly rejected legitimate regional rings.
    * @param {string} hostname - The hostname to validate
    * @returns {boolean} - True if hostname is a legitimate Teams domain
    */
   _isAllowedTeamsDomain(hostname) {
-    // List of valid Teams domains
-    const allowedDomains = [
-      'teams.cloud.microsoft',
-      'teams.microsoft.com',
-      'teams.live.com'
-    ];
-
-    // Handle Microsoft Cloud App Security (MCAS) suffix. eg: teams.cloud.microsoft.mcas.ms
-    const MCAS_SUFFIX = '.mcas.ms';
-    if (hostname.endsWith(MCAS_SUFFIX)) {
-      hostname = hostname.slice(0, -MCAS_SUFFIX.length);
+    try {
+      const { isTeamsHost } = require('../../config/defaults');
+      return isTeamsHost(hostname);
+    } catch {
+      // Fallback to a minimal exact-match check if the host table cannot be loaded
+      // (e.g. stale cache during early preload). Keeps the guard safe, not permissive.
+      return (
+        hostname === 'teams.cloud.microsoft' ||
+        hostname === 'teams.microsoft.com' ||
+        hostname === 'teams.live.com'
+      );
     }
-    
-    for (const domain of allowedDomains) {
-      // Exact match
-      if (hostname === domain) return true;
-      // Immediate subdomain match (prevents evil.com.teams.cloud.microsoft / evil.com.teams.microsoft.com attacks)
-      if (hostname.endsWith('.' + domain)) {
-        const subdomainPart = hostname.substring(0, hostname.length - (domain.length + 1));
-        if (!subdomainPart.includes('.')) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
   }
 
   _getTeams2ReactElement() {

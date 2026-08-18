@@ -54,6 +54,9 @@ class ActivityManager {
 
 function setEventHandlers(self) {
   self.ipcRenderer.on("enable-wakelock", () => wakeLock.enable());
+  self.ipcRenderer.on("linux-media-control", (_event, action) => {
+    handleLinuxMediaControl(action);
+  });
   self.ipcRenderer.on("disable-wakelock", () => wakeLock.disable());
 
   self.ipcRenderer.on('incoming-call-action', (event, action) => {
@@ -82,6 +85,48 @@ function setEventHandlers(self) {
       }
     }
   });
+}
+
+function handleLinuxMediaControl(action) {
+  const selectors = {
+    "toggle-microphone": [
+      '[data-tid*="microphone"] button',
+      '[aria-label*="microphone" i]',
+      '[aria-label*="mute" i]',
+    ],
+    "toggle-camera": [
+      '[data-tid*="camera"] button',
+      '[aria-label*="camera" i]',
+      '[aria-label*="video" i]',
+    ],
+    "answer-call": [
+      '[data-testid="calling-actions"] button',
+      '[data-testid="msn-actions"] button',
+      '[aria-label*="accept" i]',
+      '[aria-label*="answer" i]',
+    ],
+    "decline-call": [
+      '[data-testid="calling-actions"] button:last-child',
+      '[data-testid="msn-actions"] button:last-child',
+      '[aria-label*="decline" i]',
+      '[aria-label*="hang up" i]',
+    ],
+    "leave-meeting": [
+      '[aria-label*="leave" i]',
+      '[data-tid*="leave"] button',
+    ],
+  };
+
+  if (action === "play" || action === "pause" || action === "play-pause" || action === "stop") return;
+  const candidates = selectors[action];
+  if (!Array.isArray(candidates)) return;
+  for (const selector of candidates) {
+    const button = document.querySelector(selector);
+    if (button instanceof HTMLElement && !button.hasAttribute("disabled")) {
+      button.click();
+      return;
+    }
+  }
 }
 
 function setActivityHandlers(self) {

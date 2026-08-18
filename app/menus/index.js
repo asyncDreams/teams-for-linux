@@ -13,8 +13,11 @@ const { fileURLToPath } = require("node:url");
 const appMenu = require("./appMenu");
 const buildProfilesMenu = require("./profilesMenu");
 const Tray = require("./tray");
+const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
+const NotificationHistoryWindow = require("../notifications/historyWindow");
+const DiagnosticsWindow = require("../diagnostics/diagnosticsWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
 const AddProfileDialog = require("../profileDialogs/addProfile");
@@ -43,6 +46,8 @@ class Menus {
     this.profilesManager = profilesManager;
     this.allowQuit = false;
     this.documentationWindow = new DocumentationWindow();
+    this.notificationHistoryWindow = new NotificationHistoryWindow(this.window);
+    this.diagnosticsWindow = new DiagnosticsWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
     this.joinMeetingDialog = new JoinMeetingDialog(
       this.window,
@@ -66,6 +71,20 @@ class Menus {
 
   get onSpellCheckerLanguageChanged() {
     return _Menus_onSpellCheckerLanguageChanged.get(this);
+  }
+
+  /**
+   * Keeps the tray tooltip unread badge in sync with the local notification
+   * history. Registers a change listener that pushes the unread count into the
+   * tray (when enabled) and seeds the initial value.
+   * @param {object} service NotificationHistoryService-like instance
+   */
+  setNotificationHistoryService(service) {
+    if (!service || typeof service.setChangeListener !== "function") return;
+    if (typeof service.unreadCount === "function") {
+      this.tray?.setHistoryUnread(service.unreadCount());
+    }
+    service.setChangeListener((unread) => this.tray?.setHistoryUnread(unread));
   }
 
   set onSpellCheckerLanguageChanged(value) {
@@ -377,6 +396,8 @@ class Menus {
       disableNotificationWindowFlash: this.configGroup.startupConfig.disableNotificationWindowFlash,
       disableBadgeCount: this.configGroup.startupConfig.disableBadgeCount,
       defaultNotificationUrgency: this.configGroup.startupConfig.defaultNotificationUrgency,
+      notifications: this.configGroup.startupConfig.notifications,
+      presence: this.configGroup.startupConfig.presence,
     });
   }
 
@@ -436,14 +457,100 @@ class Menus {
     this.updateMenu();
   }
 
+  toggleNotificationGrouping() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.grouping = !cur.grouping;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
+    this.updateMenu();
+  }
+
+  toggleNotificationActions() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.actions = !cur.actions;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
+    this.updateMenu();
+  }
+
+  setKeepAlwaysOnlineMode(mode) {
+    const validModes = new Set(['disabled', 'always', 'business-hours']);
+    if (!validModes.has(mode)) return;
+    const cur = this.configGroup.startupConfig.presence || {};
+    cur.keepAlwaysOnlineMode = mode;
+    if (mode === 'business-hours') {
+      cur.businessHours = {
+        ...(cur.businessHours || {}),
+        enabled: true,
+      };
+    }
+    // Keep the legacy boolean synchronized for older config readers.
+    cur.keepAlwaysOnline = mode === 'always';
+    this.configGroup.startupConfig.presence = cur;
+    this.configGroup.legacyConfigStore.set('presence', cur);
+    this.updateMenu();
+  }
+
+  toggleKeepAlwaysOnline() {
+    const current = this.configGroup.startupConfig.presence?.keepAlwaysOnlineMode;
+    this.setKeepAlwaysOnlineMode(current === 'always' ? 'disabled' : 'always');
+  }
+
+  toggleLinuxMediaControls() {
+    const linux = this.configGroup.startupConfig.linux || {};
+    const mediaControls = {
+      ...(linux.mediaControls || {}),
+      enabled: linux.mediaControls?.enabled !== true,
+    };
+    const next = { ...linux, mediaControls };
+    this.configGroup.startupConfig.linux = next;
+    this.configGroup.legacyConfigStore.set("linux", next);
+    this.updateMenu();
+  }
+
+  toggleNotificationAvatar() {
+    const cur = this.configGroup.startupConfig.notifications || {};
+    cur.avatar = !cur.avatar;
+    this.configGroup.startupConfig.notifications = cur;
+    this.configGroup.legacyConfigStore.set("notifications", cur);
+    this.updateMenu();
+  }
+
   forcePip() {
-    const script = `document.querySelectorAll('div[data-type="screen-sharing"] video').forEach(v => {v.removeAttribute("disablepictureinpicture"); v.requestPictureInPicture();})`;
-    this.window.webContents.executeJavaScript(script, true);
+    const script = `(() => {
+      const candidates = [
+        ...document.querySelectorAll('div[data-type="screen-sharing"] video'),
+        ...document.querySelectorAll('[data-tid*="stage"] video, [data-tid*="meeting"] video')
+      ];
+      const seen = new Set();
+      const videos = candidates.filter(v => { if (seen.has(v)) return false; seen.add(v); return true; });
+      const target = videos[0] || document.querySelector('video');
+      if (!target) {
+        console.warn('[Video] No video element found for PiP');
+        return 'no-video';
+      }
+      try { target.removeAttribute('disablepictureinpicture'); } catch {}
+      // Prefer browser PiP; fallback to Document PiP if available and video has no srcObject
+      const p = target.requestPictureInPicture ? target.requestPictureInPicture() : Promise.reject(new Error('PiP unsupported'));
+      p.catch(e => console.warn('[Video] PiP failed', e && e.message || e));
+      return 'pip-requested';
+    })()`;
+    this.window.webContents.executeJavaScript(script, true).catch(() => {});
   }
 
   forceVideoControls() {
-    const script = `document.querySelectorAll('video').forEach(v => {v.removeAttribute("disablepictureinpicture"); v.toggleAttribute("controls");})`;
-    this.window.webContents.executeJavaScript(script, true);
+    const script = `(() => {
+      const videos = document.querySelectorAll('video');
+      if (!videos.length) return 'no-video';
+      videos.forEach(v => {
+        try { v.removeAttribute('disablepictureinpicture'); } catch {}
+        try { v.toggleAttribute('controls'); } catch {}
+        // Ensure PiP button is not hidden by Teams' overlay when controls appear
+        try { v.style.setProperty('object-fit', 'contain', 'important'); } catch {}
+      });
+      return 'toggled:' + videos.length;
+    })()`;
+    this.window.webContents.executeJavaScript(script, true).catch(() => {});
   }
 
   joinMeeting() {
@@ -461,6 +568,11 @@ class Menus {
 
   async joinMeetingWithUrl(meetingUrl) {
     try {
+      // Normalize legacy hosts when autoRedirect is on — the dialog/clipboard
+      // can hold a teams.microsoft.com link copied from an external invite.
+      if (this.configGroup.startupConfig.hosts?.autoRedirect !== false) {
+        meetingUrl = teamsHosts.normalizeTeamsUrl(meetingUrl);
+      }
       // Validate the incoming URL up front so a parse failure or a
       // non-matching URL falls through to the outer catch rather than
       // ending up assigned raw inside the Teams window.
@@ -525,20 +637,39 @@ class Menus {
   }
 
   #isValidTeamsUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    try {
-      const { protocol, hostname } = new URL(url);
-      return (
-        protocol === 'https:' &&
-        /(^|\.)teams\.(microsoft\.com|live\.com|cloud\.microsoft)$/.test(hostname)
-      );
-    } catch {
-      return false;
-    }
+    return teamsHosts.isValidTeamsUrl(url);
   }
 
   showDocumentation() {
     this.documentationWindow.show();
+  }
+
+  openNotificationHistory() {
+    if (this.configGroup.startupConfig.notifications?.history?.enabled !== true) {
+      dialog.showMessageBox(this.window, {
+        type: "info",
+        title: "Notification History",
+        message: "Notification history is disabled",
+        detail: "Set notifications.history.enabled to true in your configuration, then restart Teams for Linux.",
+      });
+      return;
+    }
+    this.notificationHistoryWindow.show();
+  }
+
+  openDiagnostics() {
+    this.diagnosticsWindow.show();
+  }
+
+  togglePresenceSync() {
+    const presence = this.configGroup.startupConfig.presence || {};
+    presence.sync = {
+      ...(presence.sync || {}),
+      enabled: !(presence.sync?.enabled === true),
+    };
+    this.configGroup.startupConfig.presence = presence;
+    this.configGroup.legacyConfigStore.set('presence', presence);
+    this.updateMenu();
   }
 
   showGpuInfo() {
@@ -555,6 +686,17 @@ class Menus {
     }
   }
 
+  openExtensionsManager() {
+    app.emit('extension-open-manager');
+  }
+
+  installExtensionCrx() {
+    app.emit('extension-install-crx');
+  }
+
+  loadExtensionUnpacked() {
+    app.emit('extension-load-unpacked');
+  }
   checkForUpdates() {
     autoUpdaterModule.checkForUpdates();
   }

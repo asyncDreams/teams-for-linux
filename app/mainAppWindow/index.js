@@ -23,6 +23,7 @@ const ssoPasswordPrefill = require("../ssoPasswordPrefill");
 const BrowserWindowManager = require("../mainAppWindow/browserWindowManager");
 const os = require("node:os");
 const path = require("node:path");
+const teamsHosts = require("../config/defaults");
 
 const DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG = {
   enabled: true,
@@ -226,30 +227,18 @@ function createScreenSharePreviewWindow() {
   });
 }
 
-// Microsoft Cloud App Security proxy suffix. Tenants that route Teams
-// through Defender for Cloud Apps (MCAS) load and store cookies at
-// `*.mcas.ms` rather than the underlying Microsoft domain. Strip the
-// suffix before matching against AUTH_DOMAINS / TEAMS_DOMAINS so the
-// proxied flavour is treated the same as the canonical hostname.
-const MCAS_SUFFIX = '.mcas.ms';
-function stripMcasSuffix(hostname) {
-  return hostname.endsWith(MCAS_SUFFIX)
-    ? hostname.slice(0, -MCAS_SUFFIX.length)
-    : hostname;
-}
+// Microsoft Cloud App Security proxy suffix — sourced from the host table
+// (app/config/defaults.js) so MCAS handling stays consistent across main,
+// preload, and menus. Tenants that route Teams through Defender for Cloud
+// Apps store cookies at `*.mcas.ms` rather than the underlying Microsoft
+// domain. Strip the suffix before matching so the proxied flavour is
+// treated the same as the canonical hostname.
+const MCAS_SUFFIX = teamsHosts.MCAS_SUFFIX;
+const stripMcasSuffix = teamsHosts.stripMcasSuffix;
 
-// Microsoft auth domains whose cookies should be checked/cleaned
-const AUTH_DOMAINS = [
-  'login.microsoftonline.com',
-  'login.microsoft.com',
-  'teams.microsoft.com',
-  'teams.cloud.microsoft',
-  'microsoft.com',
-  'office.com',
-  'office365.com',
-  'live.com',
-  'microsoftonline.com',
-];
+// Microsoft auth domains whose cookies should be checked/cleaned — derived
+// from the host table so a host-table change propagates automatically.
+const AUTH_DOMAINS = teamsHosts.AUTH_DOMAINS;
 
 // Azure AD / MSAL / SharePoint auth cookie names
 const AUTH_COOKIE_NAMES = new Set([
@@ -398,8 +387,10 @@ const AUTH_FAILURE_PATTERNS = ['InteractionRequired', 'interaction_required'];
 // clear-and-reload on its own. Recovery from a UPR happens only through an
 // explicit user action (the banner click, or the mid-call prompt).
 const OPT_IN_AUTH_FAILURE_PATTERNS = ['Uncaught Error: UPR:'];
-// Only trust auth failure signals from Teams/Microsoft origins
-const TRUSTED_AUTH_SOURCES = ['teams.cloud.microsoft', 'teams.microsoft.com', 'login.microsoftonline.com'];
+// Only trust auth failure signals from Teams/Microsoft origins. Derive Teams
+// sources from the canonical host table so a future host addition is covered;
+// login.microsoftonline.com stays literal (not a Teams host, it's the IdP).
+const TRUSTED_AUTH_SOURCES = [...teamsHosts.TEAMS_HOSTS, 'login.microsoftonline.com'];
 // Loop guard for the automatic clear-and-reload. A cooldown rather than a
 // single-shot flag: a long-running app can hit a second stale session hours
 // after the first recovery (observed in the field: recovery at 10:55, the
@@ -871,6 +862,45 @@ exports.setQuickChatManager = function (quickChatManager) {
   }
 };
 
+// Wires the notification-history service's unread count into the tray
+// tooltip without coupling the history module to the windowing layer. Safe
+// to call before the tray exists (trayIconEnabled=false) — it's a no-op then.
+exports.setNotificationHistoryService = function (service) {
+  if (menus && typeof service?.setChangeListener === "function") {
+    menus.setNotificationHistoryService(service);
+  }
+};
+
+/**
+ * Navigates the main window to a Teams deep link (https://teams… or
+ * msteams://…). Legacy hosts are canonicalized; invalid or external URLs are
+ * ignored so history entries can never redirect the window off-Teams.
+ * @param {string} url
+ * @returns {boolean} true when navigation was initiated
+ */
+exports.navigateToTeamsUrl = function (url) {
+  if (!window || window.isDestroyed() || typeof url !== "string") return false;
+  let target = url.trim();
+  if (!target) return false;
+  try {
+    if (target.startsWith("msteams:")) {
+      // v1 protocol is host-independent (msteams:/l/…) — prepend canonical origin.
+      if (/^msteams:\/\/teams\./i.test(target)) {
+        target = target.replace(/^msteams:/i, "https:");
+      } else {
+        target = (config?.url || "https://teams.cloud.microsoft") + target.replace(/^msteams:/i, "");
+      }
+    }
+    if (!teamsHosts.isValidTeamsUrl(target)) return false;
+    const normalized = teamsHosts.normalizeTeamsUrl(target);
+    window.loadURL(normalized, { userAgent: config?.chromeUserAgent });
+    restoreWindow();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 exports.onAppSecondInstance = function onAppSecondInstance(event, args) {
   console.debug("second-instance started");
   if (window) {
@@ -935,6 +965,29 @@ function applySpellCheckerConfiguration(languages, window) {
 
 function onDidFinishLoad() {
   console.debug("did-finish-load");
+
+  // Auto-redirect legacy Teams hosts to the canonical host when enabled.
+  // Runs before script injection so customCSS / screen-share injection land
+  // on the canonical origin. MCAS-wrapped navigations are never rewritten.
+  try {
+    const currentUrl = window.webContents.getURL();
+    if (
+      config?.hosts?.autoRedirect !== false &&
+      currentUrl.startsWith("https://")
+    ) {
+      const normalized = teamsHosts.normalizeTeamsUrl(currentUrl);
+      if (normalized !== currentUrl) {
+        console.info("[HOST_REDIRECT] Normalizing legacy Teams host to canonical", {
+          fromHost: (() => { try { return new URL(currentUrl).hostname; } catch { return "unknown"; } })(),
+          toHost: teamsHosts.TEAMS_CANONICAL_HOST,
+        });
+        window.loadURL(normalized, { userAgent: config.chromeUserAgent });
+        return;
+      }
+    }
+  } catch {
+    // host redirect is best-effort; a parse failure just falls through
+  }
 
   // Skip script injection on Chrome error pages (e.g. chrome-error://chromewebdata/)
   // which appear when navigation fails due to network errors like ERR_NAME_NOT_RESOLVED.
@@ -1033,9 +1086,12 @@ function restoreWindow() {
 function processArgs(args) {
   // Legacy Teams protocol format: msteams:/l/meetup-join/...
   const v1msTeams = new RegExp(config.msTeamsProtocols.v1);
-  // Modern Teams protocol format: msteams://teams.microsoft.com/l/...
+  // Modern Teams protocol format: msteams://teams.cloud.microsoft/l/... (and legacy hosts)
   const v2msTeams = new RegExp(config.msTeamsProtocols.v2);
   console.debug("processArgs:", args);
+  const shouldNormalize = config?.hosts?.autoRedirect !== false;
+  const maybeNormalize = (url) =>
+    shouldNormalize ? teamsHosts.normalizeTeamsUrl(url) : url;
   for (const arg of args) {
     console.debug(
       `testing RegExp processArgs ${new RegExp(config.meetupJoinRegEx).test(
@@ -1045,17 +1101,18 @@ function processArgs(args) {
     if (new RegExp(config.meetupJoinRegEx).test(arg)) {
       console.debug("A url argument received with https protocol");
       window.show();
-      return arg;
+      return maybeNormalize(arg);
     }
     if (v1msTeams.test(arg)) {
       console.debug("A url argument received with msteams v1 protocol");
       window.show();
+      // v1 is host-independent (msteams:/l/...) — prepend canonical origin
       return config.url + arg.substring(8, arg.length);
     }
     if (v2msTeams.test(arg)) {
       console.debug("A url argument received with msteams v2 protocol");
       window.show();
-      return arg.replace("msteams", "https");
+      return maybeNormalize(arg.replace("msteams", "https"));
     }
   }
 }
@@ -1146,13 +1203,8 @@ function onBeforeRequestHandler(details, callback) {
   }
 }
 
-// Teams domains whose enforcing CSP we never touch
-const TEAMS_DOMAINS = [
-  'teams.cloud.microsoft',
-  'teams.microsoft.com',
-  'teams.live.com',
-  'statics.teams.cdn.office.net',
-];
+// Teams domains whose enforcing CSP we never touch — derived from host table
+const TEAMS_DOMAINS = [...teamsHosts.TEAMS_HOSTS, ...teamsHosts.TEAMS_CDN_HOSTS];
 
 /**
  * Checks whether a URL belongs to a Teams domain.
@@ -1167,16 +1219,11 @@ function isTeamsDomain(url) {
   }
 }
 
-// Microsoft Identity Platform login hostnames. When Teams opens a popup to
-// one of these it is requesting interactive re-authentication (e.g. the
-// "sign in again" banner). Kept separate from AUTH_DOMAINS because that
-// list includes broad domains used for cookie scoping; this narrower set
-// is only the endpoints that initiate an OAuth/OIDC interactive flow.
-const AUTH_LOGIN_DOMAINS = [
-  'login.microsoftonline.com',
-  'login.microsoft.com',
-  'login.live.com',
-];
+// Microsoft Identity Platform login hostnames — sourced from host table.
+// Kept separate from AUTH_DOMAINS because that list includes broad domains
+// used for cookie scoping; this narrower set is only the endpoints that
+// initiate an OAuth/OIDC interactive flow.
+const AUTH_LOGIN_DOMAINS = teamsHosts.AUTH_LOGIN_DOMAINS;
 
 /**
  * Returns true when the URL targets a Microsoft Identity Platform login page.
@@ -1260,7 +1307,11 @@ function onNewWindow(details) {
 
   if (new RegExp(config.meetupJoinRegEx).test(details.url)) {
     if (config.onNewWindowOpenMeetupJoinUrlInApp) {
-      window.loadURL(details.url, { userAgent: config.chromeUserAgent });
+      const targetUrl =
+        config?.hosts?.autoRedirect !== false
+          ? teamsHosts.normalizeTeamsUrl(details.url)
+          : details.url;
+      window.loadURL(targetUrl, { userAgent: config.chromeUserAgent });
     }
     return { action: "deny" };
   } else if (

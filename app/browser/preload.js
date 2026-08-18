@@ -1,4 +1,13 @@
 const { ipcRenderer } = require("electron");
+// Phase 1 notification extractor — renderer-side normaliser (soft, PII-safe).
+// Keep require lazy-safe: if the module is missing (e.g. stale cache) we degrade
+// to the original title/body passthrough rather than breaking toasts.
+let notificationExtractor = null;
+try {
+  notificationExtractor = require("./tools/notificationExtractor");
+} catch {
+  // extractor unavailable — preload stays on legacy path
+}
 
 // #2677: Electron removed the non-standard `File.path` from dropped files, so
 // Teams (which uploads by native path) rejects them as "File is missing data".
@@ -14,18 +23,7 @@ const { ipcRenderer } = require("electron");
 // as a Blob with no path and is unaffected.
 try {
   const { webUtils } = require("electron");
-  const TEAMS_HOSTS = ["teams.cloud.microsoft", "teams.microsoft.com", "teams.live.com"];
-  const isTeamsHost = (hostname) => {
-    if (hostname.endsWith(".mcas.ms")) {
-      hostname = hostname.slice(0, -".mcas.ms".length);
-    }
-    return TEAMS_HOSTS.some(
-      (domain) =>
-        hostname === domain ||
-        (hostname.endsWith("." + domain) &&
-          !hostname.slice(0, -(domain.length + 1)).includes(".")),
-    );
-  };
+  const { isTeamsHost } = require("../config/defaults");
   // Restore the non-standard `File.path` on every File in a FileList, in place.
   // No-op for blob-backed files (screenshots) since webUtils only resolves a
   // path for files that originated from the OS file list; those are left as-is.
@@ -105,11 +103,15 @@ globalThis.electronAPI = {
   },
   sendScreenSharingStarted: (sourceId) => {
     if (sourceId === null || (typeof sourceId === 'string' && sourceId.length < 100)) {
+      globalThis.dispatchEvent(new CustomEvent('tfl-screen-sharing-started'));
       return ipcRenderer.send("screen-sharing-started", sourceId);
     }
     console.error('Invalid sourceId for screen sharing');
   },
-  sendScreenSharingStopped: () => ipcRenderer.send("screen-sharing-stopped"),
+  sendScreenSharingStopped: () => {
+    globalThis.dispatchEvent(new CustomEvent('tfl-screen-sharing-stopped'));
+    return ipcRenderer.send("screen-sharing-stopped");
+  },
   stopSharing: () => ipcRenderer.send("stop-screen-sharing-from-thumbnail"),
   sendSelectSource: () => ipcRenderer.send("select-source"),
   onSelectSource: (callback) => ipcRenderer.once("select-source", callback),
@@ -124,6 +126,12 @@ globalThis.electronAPI = {
       return Promise.reject(new Error('Invalid notification options'));
     }
     return ipcRenderer.invoke("show-notification", options);
+  },
+  showNotificationV2: (parsed) => {
+    if (!parsed || typeof parsed !== 'object') {
+      return Promise.reject(new Error('Invalid parsed notification'));
+    }
+    return ipcRenderer.invoke("show-notification-v2", parsed);
   },
   playNotificationSound: (options) => {
     if (options && typeof options !== 'object') {
@@ -216,8 +224,56 @@ globalThis.electronAPI = {
 
 // Config is fetched asynchronously; the Notification override below reads it via closure
 let notificationConfig = null;
+
+// Dedup window for notificationMethod electron/custom -> suppress double sound + hide Teams in-app toast.
+// Declared at module top-level scope so both playNotificationSound and the CustomNotification
+// factory (inside the IIFE below) can reach them.
+let lastOsNotificationAt = 0;
+const OS_NOTIFICATION_DEDUP_WINDOW_MS = 4000;
+function recordOsNotification() { lastOsNotificationAt = Date.now(); }
+function shouldSuppressTeamsInAppToast() {
+  if (notificationConfig?.notifications?.suppressInApp === false) return false;
+  const method = notificationConfig?.notificationMethod;
+  if (method !== 'electron' && method !== 'custom') return false;
+  return Date.now() - lastOsNotificationAt < OS_NOTIFICATION_DEDUP_WINDOW_MS;
+}
+function installTeamsInAppToastSuppressor() {
+  if (globalThis.__tflToastSuppressorInstalled) return;
+  globalThis.__tflToastSuppressorInstalled = true;
+  const hideTeamsToastDom = () => {
+    if (!shouldSuppressTeamsInAppToast()) return;
+    try {
+      const selectors = [
+        '[data-tid*="notification" i][role="alert"]',
+        '[data-testid*="notification" i][role="alert"]',
+        '[data-tid*="toast" i]',
+        '[role="alert"][aria-label*="notification" i]',
+      ];
+      for (const sel of selectors) {
+        try {
+          const nodes = document.querySelectorAll(sel);
+          nodes.forEach((n) => {
+            try { n.style.display = 'none'; n.setAttribute('data-tfl-suppressed', '1'); } catch {}
+          });
+        } catch {}
+      }
+    } catch {}
+  };
+  const obs = new MutationObserver(() => hideTeamsToastDom());
+  const startObs = () => {
+    try {
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class','style'] });
+    } catch {}
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObs, { once: true });
+  else startObs();
+  // Poll fallback for shadow-dom teams renders
+  setInterval(hideTeamsToastDom, 800);
+}
+
 ipcRenderer.invoke("get-config").then((config) => {
   notificationConfig = config;
+  installTeamsInAppToastSuppressor();
   console.debug("Preload: Config loaded for notifications:", {
     notificationMethod: config?.notificationMethod,
     disableNotifications: config?.disableNotifications
@@ -256,11 +312,13 @@ function createNotificationStub() {
 }
 
 function playNotificationSound(notifSound) {
-  // Skip renderer-side sound for "electron" method — the main process
-  // notification service already plays the sound before showing the notification.
   const method = notificationConfig?.notificationMethod || "web";
-  if (method === "electron") {
-    return;
+  if (method === "electron" || method === "custom") {
+    // Main process already plays the notification sound for electron/custom;
+    // still allow renderer sound only if OS notification not recently sent.
+    if (Date.now() - lastOsNotificationAt < OS_NOTIFICATION_DEDUP_WINDOW_MS) return;
+    // For electron, always delegate to main; for custom, main also plays
+    if (method === "electron") return;
   }
   if (globalThis.electronAPI?.playNotificationSound) {
     try {
@@ -294,13 +352,10 @@ function createWebNotification(classicNotification, title, options) {
   return null;
 }
 
-function createElectronNotification(options) {
-  const notificationId = crypto.randomUUID();
+function createElectronNotification(options, parsed, preallocatedId) {
+  const notificationId = (parsed && parsed.notificationId) || preallocatedId || crypto.randomUUID();
   const stub = createNotificationStub();
   let closed = false;
-  // Bridge the close event from the main process so Teams knows when
-  // the system dismisses the notification (e.g. GNOME timeout).
-  // Idempotent so stub.close() and the IPC arrival can each trigger it.
   const finalizeClose = () => {
     if (closed) return;
     closed = true;
@@ -312,16 +367,67 @@ function createElectronNotification(options) {
     finalizeClose();
   };
   stub.close = finalizeClose;
-  if (globalThis.electronAPI?.showNotification) {
+  // Prefer the structured v2 path when we have a parsed payload — it carries
+  // sender, kind, grouping key, deepLink and avatar without extra DOM work
+  // in the main process. Falls back to the legacy channel if v2 is unavailable.
+  const targetChannel = parsed ? "show-notification-v2" : "show-notification";
+  const payload = parsed ? { ...parsed, notificationId } : { ...options, notificationId };
+  // Ensure legacy fields are present for the main-process validator even on v2
+  if (parsed) {
+    payload.title = parsed.title;
+    payload.body = parsed.body;
+    if (parsed.iconDataUrl) payload.icon = parsed.iconDataUrl;
+    else if (options.icon) payload.icon = options.icon;
+  }
+  if (globalThis.electronAPI) {
     ipcRenderer.on("notification-closed", onClosed);
-    globalThis.electronAPI
-      .showNotification({ ...options, notificationId })
-      .catch((e) => {
-        ipcRenderer.removeListener("notification-closed", onClosed);
-        console.debug("showNotification failed", e);
-      });
+    const invoke = parsed && globalThis.electronAPI.showNotificationV2
+      ? globalThis.electronAPI.showNotificationV2(payload)
+      : globalThis.electronAPI.showNotification(payload);
+    // If we tried v2 and it was rejected (old main), retry once on legacy.
+    Promise.resolve(invoke).catch((e) => {
+      if (parsed && targetChannel === "show-notification-v2") {
+        console.debug("show-notification-v2 not available, falling back to legacy", e?.message || e);
+        return globalThis.electronAPI.showNotification({ ...options, notificationId }).catch((e2) => {
+          console.debug("showNotification fallback failed", e2);
+        });
+      }
+      console.debug("showNotification failed", e);
+      ipcRenderer.removeListener("notification-closed", onClosed);
+    });
   }
   return stub;
+}
+
+/**
+ * Build a ParsedNotification for the current toast when the extractor is
+ * available. Soft — any exception degrades to null and the caller falls
+ * back to the legacy title/body path. No PII is logged.
+ */
+function tryBuildParsed(title, options, preallocatedId) {
+  if (!notificationExtractor) return { parsed: null, notificationId: preallocatedId || null };
+  try {
+    const hubProbe = notificationExtractor.probeHubCard();
+    const notificationId = preallocatedId || crypto.randomUUID();
+    const parsed = notificationExtractor.buildParsedNotification({
+      title,
+      options,
+      notificationId,
+      hubProbe,
+    });
+    console.debug("[NOTIFICATIONS] Parsed notification", {
+      kind: parsed.kind,
+      hasSender: !!parsed.sender,
+      hasAvatar: !!(parsed.sender && parsed.sender.avatarRef),
+      hasDeepLink: !!parsed.deepLink,
+      hasGroup: !!(parsed.conversation && parsed.conversation.key),
+      notificationId,
+    });
+    return { parsed, notificationId };
+  } catch (e) {
+    console.debug("notificationExtractor build failed", e?.message || e);
+    return { parsed: null, notificationId: preallocatedId || null };
+  }
 }
 
 function createCustomNotification(title, options) {
@@ -364,9 +470,7 @@ function createCustomNotification(title, options) {
 
   // Factory function that creates notification objects (avoids "return in constructor" issue)
   function CustomNotification(title, options) {
-    // Use config from closure scope (will be null initially, populated async)
     if (notificationConfig?.disableNotifications) {
-      // Return dummy object to avoid Teams errors
       return { onclick: null, onclose: null, onerror: null };
     }
 
@@ -374,28 +478,52 @@ function createCustomNotification(title, options) {
     options.icon = options.icon || ICON_BASE64;
     options.title = options.title || title;
     options.type = options.type || "new-message";
-    // Default Ubuntu Unity DE auto-closes. Users on GNOME and similar can opt
-    // into persistent notifications via `notifications.timeoutType: "never"`
-    // (issue #2411). Mirrors Electron's Notification timeoutType.
     options.timeoutType =
       notificationConfig?.notifications?.timeoutType === "never"
         ? "never"
         : "default";
     options.requireInteraction = options.timeoutType === "never";
 
-    // Default to "web" if config not loaded yet
     const method = notificationConfig?.notificationMethod || "web";
 
+    // Build the structured payload once — enriches all three methods but is
+    // only forwarded over IPC for the Electron path. Web/custom benefit from
+    // the "<Sender>: <Preview>" title rewrite and avatar pointer when present.
+    const preId = crypto.randomUUID();
+    const { parsed } = tryBuildParsed(title, options, preId);
+
     if (method === "custom") {
+      if (parsed) {
+        const customOpts = {
+          ...options,
+          body: parsed.body || options.body,
+          icon: parsed.iconDataUrl || options.icon,
+          title: parsed.title,
+        };
+          recordOsNotification();
+        return createCustomNotification(parsed.title, customOpts);
+      }
+      recordOsNotification();
       return createCustomNotification(title, options);
     }
 
     if (method === "web") {
+      if (parsed) {
+        const webOpts = {
+          ...options,
+          body: parsed.body || options.body,
+          icon: parsed.iconDataUrl || options.icon,
+          title: parsed.title,
+        };
+        const notification = createWebNotification(classicNotification, parsed.title, webOpts);
+        return notification || { onclick: null, onclose: null, onerror: null };
+      }
       const notification = createWebNotification(classicNotification, title, options);
       return notification || { onclick: null, onclose: null, onerror: null };
     }
 
-    return createElectronNotification(options);
+    recordOsNotification();
+    return createElectronNotification(options, parsed, preId);
   }
 
   CustomNotification.requestPermission = async function() {
@@ -480,10 +608,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error("Preload: ActivityManager failed to initialize:", err.message);
     }
 
+    // Keep-always-online: nudge Teams idle tracker to stay Available when enabled
+    try {
+      const ah = require("./tools/activityHub");
+      if (config?.presence && typeof ah.initKeepAlwaysOnline === 'function') ah.initKeepAlwaysOnline(config);
+    } catch {}
     // Listen for config changes from the main process (e.g., when menu toggles are clicked)
     ipcRenderer.on("config-changed", (_event, configChanges) => {
       for (const [key, value] of Object.entries(configChanges)) {
         config[key] = value;
+        if (notificationConfig) notificationConfig[key] = value;
+      }
+      if (Object.hasOwn(configChanges, 'presence')) {
+        try {
+          require("./tools/activityHub").updateKeepOnlineConfig(config);
+          require("./tools/mqttStatusMonitor").updateConfig(config);
+        } catch {
+          // Presence enhancements are optional; a stale Teams reload must not break preload.
+        }
       }
     });
 

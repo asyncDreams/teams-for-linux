@@ -1,8 +1,28 @@
 const { nativeImage } = require("electron");
 const TrayIconChooser = require("./trayIconChooser");
+const PRESENCE_COLORS = {
+  0: null,         // offline/unknown — no dot
+  1: "#107c41",    // Available — green
+  2: "#d83b01",    // Busy — red
+  3: "#a80000",    // DND — dark red (renderer draws stripe)
+  4: "#ffb900",    // Away — yellow
+  5: "#ffb900",    // Be Right Back — yellow
+};
+const PRESENCE_LABELS = {
+  0: "Offline",
+  1: "Available",
+  2: "Busy",
+  3: "Do not disturb",
+  4: "Away",
+  5: "Be right back",
+};
+
 class TrayIconRenderer {
   #lastRequestedCount;
   #updateSequence = 0;
+  #lastPresence = 0;
+  #lastPresenceSource = null;
+  #lastUnreadCount = 0;
 
   init(config, ipcRenderer) {
     this.ipcRenderer = ipcRenderer;
@@ -14,67 +34,93 @@ class TrayIconRenderer {
       "unread-count",
       this.updateActivityCount.bind(this),
     );
+    // Presence dot (Linux/Windows, opt-in). Listen even when the flag is off
+    // at boot so a config reload could pick it up without a restart.
+    globalThis.addEventListener(
+      "user-status-changed-local",
+      this.#onPresenceChanged.bind(this),
+    );
   }
 
-  async updateActivityCount(event) {
-    const count = event.detail.number;
+  #onPresenceChanged(event) {
+    const status = Number(event.detail?.status) || 0;
+    const source = typeof event.detail?.source === 'string' ? event.detail.source : null;
+    if (status === this.#lastPresence && source === this.#lastPresenceSource) return;
+    this.#lastPresence = status;
+    this.#lastPresenceSource = source;
+    if (!this.config.media?.showStatusOnTrayIcon) return;
+    if (this.config.trayIconEnabled === false) return;
+    // Re-render at current unread count with the new presence colour/source.
+    this.#renderAndSend(this.#lastUnreadCount, status, source).catch(() => {});
+  }
 
-    // Deduplicate against the most recently *requested* count, not the last
-    // one that finished sending. Comparing against the completed count
-    // swallows a clear-to-zero event that arrives while a non-zero render is
-    // still awaiting the canvas, leaving the badge stuck (#2620).
-    if (count === this.#lastRequestedCount) {
-      console.debug("[TRAY_DIAG] Activity count unchanged, skipping update");
-      return;
-    }
-    this.#lastRequestedCount = count;
-
-    // Each update takes a sequence token; any update that finishes its render
-    // after a newer one has started (including the render-free zero path) is
-    // discarded, so out-of-order completions can never overwrite a newer count.
+  async #renderAndSend(count, presenceStatus, presenceSource = null) {
     const sequence = ++this.#updateSequence;
-    const startTime = Date.now();
-
-    console.debug("[TRAY_DIAG] Activity count update initiated", {
-      newCount: count,
-      willFlash: count > 0 && !this.config.disableNotificationWindowFlash
-    });
-
-    // Count 0 uses the base icon directly, skipping canvas rendering
+    this.#lastRequestedCount = count;
     let icon = null;
-    if (count > 0) {
+    if (count > 0 || (presenceStatus && PRESENCE_COLORS[presenceStatus])) {
       try {
-        icon = await this.render(count);
+        icon = await this.render(count, presenceStatus);
       } catch (error) {
-        console.error("[TRAY_DIAG] Icon render failed", {
-          error: error.message,
-          count: count,
-          elapsedMs: Date.now() - startTime
-        });
-        // Allow a later event with the same count to retry
+        console.error("[TRAY_DIAG] Icon render failed", { error: error.message });
         this.#lastRequestedCount = undefined;
         return;
       }
     }
+    if (sequence !== this.#updateSequence) return;
+    this.ipcRenderer.send("tray-update", {
+      icon,
+      flash: count > 0 && !this.config.disableNotificationWindowFlash,
+      count,
+      presence: presenceStatus || 0,
+      presenceSource: presenceSource || null,
+    });
+  }
 
-    if (sequence !== this.#updateSequence) {
-      console.debug("[TRAY_DIAG] Update superseded while rendering, discarding", {
-        staleCount: count
-      });
+  async updateActivityCount(event) {
+    const count = event.detail.number;
+    this.#lastUnreadCount = count;
+    const presence = this.config.media?.showStatusOnTrayIcon ? this.#lastPresence : 0;
+    const presenceSource = this.config.media?.showStatusOnTrayIcon ? this.#lastPresenceSource : null;
+    // Deduplicate on the tuple (count, presence, source) — a provider-only
+    // change must still render even when the status code is unchanged.
+    if (count === this.#lastRequestedCount && presence === (this._lastRenderedPresence || 0) && presenceSource === (this._lastRenderedPresenceSource || null)) {
+      console.debug("[TRAY_DIAG] Activity count unchanged, skipping update");
       return;
     }
-
+    const sequence = ++this.#updateSequence;
+    const startTime = Date.now();
+    console.debug("[TRAY_DIAG] Activity count update initiated", {
+      newCount: count,
+      presence,
+      willFlash: count > 0 && !this.config.disableNotificationWindowFlash
+    });
+    let icon = null;
+    const needsRender = count > 0 || (presence && PRESENCE_COLORS[presence]);
+    if (needsRender) {
+      try {
+        icon = await this.render(count, presence);
+      } catch (error) {
+        console.error("[TRAY_DIAG] Icon render failed", { error: error.message, count, elapsedMs: Date.now() - startTime });
+        this.#lastRequestedCount = undefined;
+        return;
+      }
+    }
+    if (sequence !== this.#updateSequence) {
+      console.debug("[TRAY_DIAG] Update superseded while rendering, discarding", { staleCount: count });
+      return;
+    }
+    this.#lastRequestedCount = count;
+    this._lastRenderedPresence = presence;
+    this._lastRenderedPresenceSource = presenceSource;
     this.ipcRenderer.send("tray-update", {
-      icon: icon,
+      icon,
       flash: count > 0 && !this.config.disableNotificationWindowFlash,
-      count: count,
+      count,
+      presence,
+      presenceSource,
     });
-
-    console.debug("[TRAY_DIAG] Tray update IPC sent", {
-      count: count,
-      totalTimeMs: Date.now() - startTime
-    });
-
+    console.debug("[TRAY_DIAG] Tray update IPC sent", { count, presence, totalTimeMs: Date.now() - startTime });
     if (!this.config.disableBadgeCount) {
       await this.ipcRenderer.invoke("set-badge-count", count).catch(err =>
         console.error("[TRAY_DIAG] Failed to set badge count:", err.message)
@@ -82,50 +128,37 @@ class TrayIconRenderer {
     }
   }
 
-  render(newActivityCount) {
+  render(newActivityCount, presenceStatus = 0) {
     const IMAGE_PNG = "image/png";
     return new Promise((resolve) => {
       const canvas = document.createElement("canvas");
       canvas.height = 140;
       canvas.width = 140;
       const image = new Image();
-      
       const baseIconData = this.baseIcon.toDataURL(IMAGE_PNG);
-      
       image.onerror = () => {
         console.error("Failed to load base icon for tray rendering");
-        resolve(baseIconData); // Fallback to base icon
+        resolve(baseIconData);
       };
-
       image.onload = () => {
-        // Drawing can throw (e.g. getContext returning null under memory
-        // pressure); resolve with the base icon so the promise never hangs.
         try {
-          this._addRedCircleNotification(
-            canvas,
-            image,
-            newActivityCount,
-            resolve,
-          );
+          this._addRedCircleNotification(canvas, image, newActivityCount, resolve, presenceStatus);
         } catch (error) {
           console.error("[TRAY_DIAG] Canvas drawing failed, using base icon:", error);
           resolve(baseIconData);
         }
       };
-
       if (!baseIconData || baseIconData === "data:,") {
         console.error("Base icon toDataURL returned invalid data");
-        resolve(baseIconData); // Fallback
+        resolve(baseIconData);
         return;
       }
-      
       image.src = baseIconData;
     });
   }
 
-  _addRedCircleNotification(canvas, image, newActivityCount, resolve) {
+  _addRedCircleNotification(canvas, image, newActivityCount, resolve, presenceStatus = 0) {
     const ctx = canvas.getContext("2d");
-
     ctx.drawImage(image, 0, 0, 140, 140);
     if (newActivityCount > 0 && !this.config.disableBadgeCount) {
       ctx.fillStyle = "red";
@@ -134,13 +167,28 @@ class TrayIconRenderer {
       ctx.fill();
       ctx.textAlign = "center";
       ctx.fillStyle = "white";
-
-      ctx.font =
-        'bold 70px "Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif';
+      ctx.font = 'bold 70px "Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif';
       if (newActivityCount > 9) {
         ctx.fillText("+", 100, 110);
       } else {
         ctx.fillText(newActivityCount.toString(), 100, 110);
+      }
+    }
+    // Presence dot (small, bottom-right) when opted in and we have a known status.
+    const presenceColor = PRESENCE_COLORS[presenceStatus];
+    if (presenceColor && this.config.media?.showStatusOnTrayIcon) {
+      // White border then coloured dot; for DND add a horizontal bar.
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(112, 120, 22, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = presenceColor;
+      ctx.beginPath();
+      ctx.arc(112, 120, 16, 0, 2 * Math.PI);
+      ctx.fill();
+      if (presenceStatus === 3) {
+        ctx.fillStyle = "white";
+        ctx.fillRect(102, 117, 20, 6);
       }
     }
     const resizedCanvas = this._getResizeCanvasWithOriginalIconSize(canvas);

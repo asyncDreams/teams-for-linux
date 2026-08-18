@@ -31,6 +31,7 @@
     "start": "electron ./app --trace-warnings",
     "start:dev": "electron ./app --trace-warnings --no-sandbox",
     "generate-release-info": "node scripts/generateReleaseInfo.js",
+    "generate-logo-assets": "node scripts/generateLogoAssets.js",
     "generate-ipc-docs": "node scripts/generateIpcDocs.js",
     "generate-config-docs": "node scripts/generateConfigDocs.js",
     "prebuild": "npm run generate-release-info",
@@ -105,7 +106,8 @@
       "desktop": {
         "entry": {
           "Name": "Teams for Linux",
-          "Comment": "Unofficial client for Microsoft Teams for Linux"
+          "Comment": "Unofficial client for Microsoft Teams for Linux",
+          "MimeType": "x-scheme-handler/msteams;"
         }
       },
       "target": [

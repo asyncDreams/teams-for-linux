@@ -41,6 +41,8 @@ const allowedChannels = new Set([
   // Notifications and user interaction
   'play-notification-sound',
   'show-notification',
+  // Structured notification payload (Phase 1 parity — sender/kind/grouping/avatar)
+  'show-notification-v2',
   'notification-closed',
   'notification-show-toast',
   'notification-toast-click',
@@ -48,6 +50,9 @@ const allowedChannels = new Set([
   'set-badge-count',
   'tray-update',
   'dock-icon-update',
+  // Optional unified presence reconciliation and diagnostics
+  'presence-sync-update',
+  'presence-sync-get-diagnostics',
 
   // Call management (sorted alphabetically)
   'call-connected',
@@ -60,6 +65,7 @@ const allowedChannels = new Set([
   // Media status (camera/microphone)
   'camera-state-changed',
   'microphone-state-changed',
+  'linux-media-control',
 
   // Scheduled-meeting-start toast detection for MQTT (#2587)
   'meeting-started',
@@ -96,6 +102,7 @@ const allowedChannels = new Set([
   'graph-api-get-mail-messages',
   'graph-api-search-people',
   'graph-api-send-chat-message',
+  'graph-api-get-presence',
 
   // Join meeting dialog
   'join-meeting-submit',
@@ -160,7 +167,38 @@ const allowedChannels = new Set([
   'profile-switcher-open-add',
   'profile-switcher-open-manage',
   'profile-switcher-set-expanded',
-  'profile-switcher-state'
+  'profile-switcher-state',
+  // Chromium extensions (off by default)
+  'extension-state',
+  'extension-set-master-enabled',
+  'extension-list',
+  'extension-details',
+  'extension-load-unpacked',
+  'extension-install-crx',
+  'extension-pick-unpacked',
+  'extension-pick-crx',
+  'extension-remove',
+  'extension-set-enabled',
+  'extension-reload',
+  'extension-open-folder',
+  'extension-open-popup',
+  'extension-open-options',
+  'extension-export-metadata',
+  'extension-open-manager',
+  'extension-identity-launch-web-auth-flow',
+  'extension-tabs-create',
+  'extension-shim-report',
+  'notification-toast-action',
+
+  // Persistent notification history center
+  'notification-history-list',
+  'notification-history-mark-read',
+  'notification-history-mark-all-read',
+  'notification-history-clear',
+  'notification-history-clear-all',
+  'notification-history-export',
+  'notification-history-unread-count',
+  'notification-history-open'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);

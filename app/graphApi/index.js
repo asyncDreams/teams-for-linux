@@ -438,6 +438,12 @@ class GraphApiClient {
     }
   }
 
+  /** Get current presence (availability/activity) — requires Presence.Read consent; 403 is normal when the tenant hasn't granted it */
+  async getPresence() {
+    logger.debug('[GRAPH_API] Getting presence');
+    return await this.makeRequest('/me/presence');
+  }
+
   /** Send a chat message to a user (orchestrates resolve + send) */
   async sendChatMessageToUser(contactInfo, content) {
     try {

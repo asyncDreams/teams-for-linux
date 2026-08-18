@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagnostics</title>
+  <link rel="stylesheet" href="../assets/css/fluent-parity.css">
+  <style>
+    :root { color-scheme: light dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #f7f8fc; color: #242338; }
+    @media (prefers-color-scheme: dark) { body { background: #171722; color: #f4f3ff; } .panel { background: #232332; } th { color: #aaa8c5; } .value { color: #f4f3ff; } }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    .muted { color: #73728b; font-size: 13px; }
+    .panel { margin-top: 18px; padding: 18px; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(39, 35, 79, .10); }
+    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .metric { padding: 12px; border-radius: 10px; background: rgba(91, 91, 214, .09); }
+    .metric strong { display: block; margin-top: 4px; font-size: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 13px; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid rgba(127, 125, 155, .2); }
+    th { color: #5d5b77; font-weight: 600; }
+    td.error { color: #b3261e; }
+    .empty { padding: 18px 0 4px; color: #73728b; }
+  </style>
+</head>
+<body>
+  <h1>Diagnostics</h1>
+  <div class="muted">Read-only runtime diagnostics. Refreshes automatically. Environment values are reduced to safe capability flags.</div>
+
+  <section class="panel" id="panel-presence">
+    <div class="summary">
+      <div class="metric"><span class="muted">Unified sync</span><strong id="enabled">Disabled</strong></div>
+      <div class="metric"><span class="muted">Current status</span><strong id="current">No signal</strong></div>
+      <div class="metric"><span class="muted">Active providers</span><strong id="active">None</strong></div>
+    </div>
+    <p class="muted" id="updated">No provider update received.</p>
+    <h2>Providers</h2>
+    <table>
+      <thead><tr><th>Provider</th><th>Status</th><th>Source</th><th>Last sync</th><th>Health</th></tr></thead>
+      <tbody id="providers"></tbody>
+    </table>
+    <div class="empty" id="empty">No diagnostics are available until unified sync is enabled.</div>
+  </section>
+
+  <script>
+    const get = (id) => document.getElementById(id);
+    const dateText = (value) => value ? new Date(value).toLocaleString() : '—';
+
+    function renderPresence(data) {
+      const enabled = data?.enabled === true;
+      get('enabled').textContent = enabled ? 'Enabled' : 'Disabled';
+      const current = data?.current;
+      get('current').textContent = current ? `${current.label || 'Unknown'} · ${current.source || 'provider'}` : 'No signal';
+      get('active').textContent = data?.activeProviders?.length ? data.activeProviders.join(', ') : 'None';
+      get('updated').textContent = data?.lastSyncAt ? `Last provider update: ${dateText(data.lastSyncAt)}` : 'No provider update received.';
+      const rows = get('providers');
+      rows.replaceChildren();
+      const providers = Array.isArray(data?.providers) ? data.providers : [];
+      get('empty').hidden = providers.length > 0;
+      for (const provider of providers) {
+        const row = document.createElement('tr');
+        [
+          provider.name,
+          provider.active && provider.label ? provider.label : 'Inactive',
+          provider.active && provider.source ? provider.source : '—',
+          dateText(provider.lastSyncAt),
+          provider.lastError ? `Retrying (${provider.lastError})` : 'OK',
+        ].forEach((value, index) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          if (index === 4 && provider.lastError) cell.className = 'error';
+          row.append(cell);
+        });
+        rows.append(row);
+      }
+    }
+
+    async function refreshPresence() {
+      try { renderPresence(await globalThis.presenceDiagnosticsApi.get()); } catch { /* window may be closing */ }
+    }
+    refreshPresence();
+    setInterval(refreshPresence, 2000);
+  </script>
+</body>
+</html>
