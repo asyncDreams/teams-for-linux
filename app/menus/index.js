@@ -4,7 +4,6 @@ const {
   MenuItem,
   clipboard,
   dialog,
-  session,
   ipcMain,
 } = require("electron");
 const fs = require("node:fs"),
@@ -12,6 +11,10 @@ const fs = require("node:fs"),
 const { fileURLToPath } = require("node:url");
 const appMenu = require("./appMenu");
 const buildProfilesMenu = require("./profilesMenu");
+const {
+  collectPartitionsToClear,
+  clearStorageForPartitions,
+} = require("../utils/storagePartitions");
 const Tray = require("./tray");
 const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
@@ -110,22 +113,20 @@ class Menus {
       }) === 0;
 
     if (clearStorage) {
-      const defSession = session.fromPartition(
-        this.configGroup.startupConfig.partition
+      // startupConfig, not configGroup: AppConfiguration keeps the parsed
+      // config behind a getter, so reading an option straight off the instance
+      // is always undefined and silently clears everything (#2860).
+      const clearOptions = this.configGroup.startupConfig.clearStorageData;
+      // Every profile owns its own partition, so clearing only the startup one
+      // left each profile's cookies and tokens on disk (#2862).
+      await clearStorageForPartitions(
+        collectPartitionsToClear(
+          this.configGroup.startupConfig.partition,
+          this.profilesManager
+        ),
+        clearOptions,
+        "on quit"
       );
-      if (this.configGroup.clearStorageData) {
-        console.debug(
-          "Clearing storage data on quit",
-          this.config.clearStorageData
-        );
-        await defSession.clearStorageData(this.configGroup.clearStorageData);
-      } else {
-        console.debug(
-          "Clearing storage on quit",
-          this.configGroup.clearStorageData
-        );
-        await defSession.clearStorageData();
-      }
     }
 
     this.window.close();

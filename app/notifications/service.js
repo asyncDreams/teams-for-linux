@@ -4,6 +4,9 @@ const path = require("node:path");
 const teamsHosts = require("../config/defaults");
 const AvatarCache = require("./avatarCache");
 
+const ICON_FETCH_TIMEOUT_MS = 1000;
+const MAX_ICON_BYTES = 5 * 1024 * 1024;
+
 const USER_STATUS = {
   UNKNOWN: -1,
   AVAILABLE: 1,
@@ -508,11 +511,15 @@ class NotificationService {
     });
 
     try {
+      const iconPromise = this.#loadIcon(options.icon).catch(() => null);
+
+      // Play notification sound if configured (await to catch any errors)
       await this.#playNotificationSound({
         type: options.type,
         audio: "default",
       });
 
+      const icon = await iconPromise;
       const notificationConfig = {
         title: options.title,
         body: options.body,
@@ -520,13 +527,7 @@ class NotificationService {
         timeoutType: options.timeoutType === "never" ? "never" : "default",
       };
 
-      if (options.icon) {
-        try {
-          notificationConfig.icon = nativeImage.createFromDataURL(options.icon);
-        } catch {
-          // invalid icon — show without
-        }
-      }
+      if (icon) notificationConfig.icon = icon;
 
       const notification = new Notification(notificationConfig);
 
@@ -604,8 +605,88 @@ class NotificationService {
     }
   }
 
+  async #loadIcon(icon) {
+    if (typeof icon !== "string" || !icon) return null;
+
+    if (icon.startsWith("data:")) {
+      return this.#nonEmptyImage(nativeImage.createFromDataURL(icon));
+    }
+
+    const win = this.#mainWindow.getWindow();
+    const url = this.#parseHttpsUrl(icon);
+    const pageUrl = this.#parseHttpsUrl(win?.webContents?.getURL?.());
+    if (!url || !pageUrl || url.origin !== pageUrl.origin) return null;
+
+    const session = win?.webContents?.session;
+    if (!session?.fetch) return null;
+
+    return this.#loadRemoteIcon(session, url);
+  }
+
+  async #loadRemoteIcon(session, url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS);
+    try {
+      const response = await session.fetch(url.href, {
+        credentials: "include",
+        redirect: "error",
+        signal: controller.signal,
+      });
+      if (!response.ok) return null;
+
+      const declaredSize = Number(response.headers.get("content-length"));
+      if (declaredSize > MAX_ICON_BYTES) return null;
+
+      const bytes = await this.#readIconBody(response.body);
+      if (!bytes) return null;
+
+      return this.#nonEmptyImage(nativeImage.createFromBuffer(bytes));
+    } catch {
+      console.warn("[NOTIFICATIONS] Could not load remote notification icon");
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async #readIconBody(body) {
+    const reader = body?.getReader();
+    if (!reader) return null;
+
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks, size);
+
+      size += value.byteLength;
+      if (size > MAX_ICON_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+  }
+
+  #parseHttpsUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #nonEmptyImage(image) {
+    return image.isEmpty() ? null : image;
+  }
+
   async #playNotificationSound(options) {
-    console.debug(`[NOTIFICATIONS] Sound requested => type: ${options.type}, audio: ${options.audio}`);
+    // options can carry the notification title and body (the web path forwards
+    // them over play-notification-sound), so log only the sound-relevant fields.
+    console.debug(
+      `[NOTIFICATIONS] Sound requested => type: ${options.type}, audio: ${options.audio}`
+    );
 
     if (!this.#soundPlayer || this.#config.disableNotificationSound) {
       console.debug("Notification sounds are disabled");

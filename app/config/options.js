@@ -289,6 +289,7 @@ module.exports = {
           "Flag to clear storage data. Expects an object of the type https://www.electronjs.org/docs/latest/api/session#sesclearstoragedataoptions",
         type: "boolean",
         applyMode: "restart",
+        deprecated: "use storage.clearData instead",
       },
       clientCertPath: {
         default: "",
@@ -475,6 +476,7 @@ module.exports = {
           "Array of global shortcuts to disable while the app is in focus. See https://www.electronjs.org/docs/latest/api/accelerator for available accelerators to use",
         type: "array",
         applyMode: "restart",
+        deprecated: "use shortcuts.disableWhileFocused instead",
       },
       globalShortcuts: {
         default: [],
@@ -482,6 +484,7 @@ module.exports = {
           "Global keyboard shortcuts that work system-wide. Disabled by default (opt-in). See configuration docs for details and limitations",
         type: "array",
         applyMode: "restart",
+        deprecated: "use shortcuts.global instead",
       },
       electronCLIFlags: {
         default: [],
@@ -1153,7 +1156,7 @@ module.exports = {
             verifyMethod: "",
           },
           keepMsalCacheEncryptionCookie: {
-            enabled: false,
+            enabled: true,
             days: 400
           }
         },
@@ -1215,7 +1218,7 @@ module.exports = {
           },
           "keepMsalCacheEncryptionCookie.enabled": {
             type: "boolean",
-            describe: "Sets an expiration date for the 'msal.cache.encryption' cookie to keep it after restarts (issue #2681); off by default"
+            describe: "Sets an expiration date for the 'msal.cache.encryption' cookie to keep it after restarts (issue #2681); on by default. Set to false to keep the cookie session-scoped, at the cost of signing in again after every restart"
           },
           "keepMsalCacheEncryptionCookie.days": {
             type: "number",
@@ -1303,6 +1306,56 @@ module.exports = {
             type: "boolean",
             describe:
               "Keep GPU enabled and skip the fake media UI flag under XWayland; may fix camera issues but can break screen sharing.",
+          },
+        },
+        applyMode: "restart",
+      },
+      shortcuts: {
+        default: {
+          global: [],
+          disableWhileFocused: [],
+        },
+        describe:
+          "Keyboard shortcut configuration. " +
+          "global: global keyboard shortcuts that work system-wide, disabled by default (opt-in). " +
+          "disableWhileFocused: global shortcuts to disable while the app is in focus. " +
+          "Replaces the deprecated globalShortcuts and disableGlobalShortcuts options.",
+        type: "object",
+        fields: {
+          "global": {
+            type: "array",
+            describe:
+              "Global keyboard shortcuts that work system-wide. Disabled by default (opt-in). See configuration docs for details and limitations",
+          },
+          "disableWhileFocused": {
+            type: "array",
+            describe:
+              "Array of global shortcuts to disable while the app is in focus. See https://www.electronjs.org/docs/latest/api/accelerator for available accelerators to use",
+          },
+        },
+        applyMode: "restart",
+      },
+      storage: {
+        default: {
+          clearData: null,
+        },
+        describe:
+          "Storage configuration. " +
+          "clearData: flag to clear storage data, expects an object of the type " +
+          "https://www.electronjs.org/docs/latest/api/session#sesclearstoragedataoptions. " +
+          "Replaces the deprecated clearStorageData option.",
+        type: "object",
+        fields: {
+          "clearData": {
+            // Union because the value is either a flag (clear everything) or a
+            // clearStorageDataOptions object; both work, only the warn-only
+            // validator reads this. The deprecated flat clearStorageData keeps
+            // its plain "boolean" because that one IS handed to yargs, and an
+            // unrecognised type string silently disables boolean CLI parsing:
+            // --clearStorageData would yield null instead of true.
+            type: "boolean|object",
+            describe:
+              "Flag to clear storage data. Expects an object of the type https://www.electronjs.org/docs/latest/api/session#sesclearstoragedataoptions",
           },
         },
         applyMode: "restart",

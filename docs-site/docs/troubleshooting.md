@@ -14,6 +14,10 @@ For configuration options, see [Configuration](configuration.md). For developmen
 - **Audio/Video**: Verify device selection in Teams settings
 - **Installation**: Use clean install and clear previous data
 
+## Performance Tuning
+
+When the app feels slow or heavy, seven configuration options are the first-line knobs to check. `disableGpu` turns off GPU compositing and hardware acceleration, which helps on broken graphics drivers and hurts otherwise. `cacheManagement.maxCacheSizeMB` (default 600) and `cacheManagement.cacheCheckIntervalMs` (default one hour) govern automatic cache cleanup, while `electronCLIFlags` passes arbitrary Chromium flags for tuning memory, GPU, or rendering behaviour. `appIdleTimeout` and `appIdleTimeoutCheckInterval` control how often idle state is polled, and `wayland.xwaylandOptimizations` affects GPU behaviour under XWayland. See [Configuration](configuration.md) for details on each option.
+
 ---
 
 ## Common Issues and Solutions
@@ -427,7 +431,7 @@ Replace `<your-chrome-version>` with the Chrome version Teams for Linux reports.
     }
     ```
 
-   Known caveat: on the `electron` path, notifications currently render without the sender avatar. The `web` path gets Chromium to fetch the icon URL automatically; the `electron` path expects a data URL. This is tracked as a follow-up.
+   The `electron` path fetches sender avatars through the authenticated Teams session. If an avatar cannot be loaded, the notification still appears without it.
 
 **Related GitHub Issues:** [#2411](https://github.com/IsmaelMartinez/teams-for-linux/issues/2411)
 

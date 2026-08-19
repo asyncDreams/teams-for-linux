@@ -23,12 +23,16 @@ class TrayIconRenderer {
   #lastPresence = 0;
   #lastPresenceSource = null;
   #lastUnreadCount = 0;
+  #baseIconDataUrl = null;
 
   init(config, ipcRenderer) {
     this.ipcRenderer = ipcRenderer;
     this.config = config;
     const iconChooser = new TrayIconChooser(config);
     this.baseIcon = nativeImage.createFromPath(iconChooser.getFile());
+    // Defensive cache reset only; re-running init() is not otherwise safe
+    // (it would double-register the unread-count listener)
+    this.#baseIconDataUrl = null;
     this.iconSize = this.baseIcon.getSize();
     globalThis.addEventListener(
       "unread-count",
@@ -135,7 +139,10 @@ class TrayIconRenderer {
       canvas.height = 140;
       canvas.width = 140;
       const image = new Image();
-      const baseIconData = this.baseIcon.toDataURL(IMAGE_PNG);
+      // The data URL never changes for a given base icon, so encode it once
+      // instead of re-encoding on every render.
+      this.#baseIconDataUrl ??= this.baseIcon.toDataURL(IMAGE_PNG);
+      const baseIconData = this.#baseIconDataUrl;
       image.onerror = () => {
         console.error("Failed to load base icon for tray rendering");
         resolve(baseIconData);

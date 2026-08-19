@@ -135,6 +135,7 @@ const player = createPlayer();
 
 const certificateModule = require("./certificate");
 const clientCertificate = require("./clientCertificate");
+const backgroundPortal = require("./backgroundPortal");
 const CacheManager = require("./cacheManager");
 const gotTheLock = app.requestSingleInstanceLock();
 const mainAppWindow = require("./mainAppWindow");
@@ -840,6 +841,10 @@ async function handleAppReady() {
     // Keep the tray tooltip unread badge in sync with local notification history.
     mainAppWindow.setNotificationHistoryService(notificationHistoryService);
     perf.mark("handleAppReady:mainWindowReady");
+
+    // Flatpak only: record the background permission with the desktop portal
+    // and set the Background Apps status line (issue #2815). No-op elsewhere.
+    backgroundPortal.init();
 
     // Wire per-profile WebContentsView lifecycle once the main window
     // exists. Bootstrap Profile 0 from the legacy partition so a
