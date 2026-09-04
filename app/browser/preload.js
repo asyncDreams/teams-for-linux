@@ -557,49 +557,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // NOTE: the unread-count event is handled by trayIconRenderer.js; a second
     // listener here previously caused duplicate IPC traffic and rendering.
 
-    const modules = [
-      { name: "zoom", path: "./tools/zoom" },
-      { name: "shortcuts", path: "./tools/shortcuts" },
-      { name: "settings", path: "./tools/settings" },
-      { name: "theme", path: "./tools/theme" },
-      { name: "emulatePlatform", path: "./tools/emulatePlatform" },
-      { name: "webauthnOverride", path: "./tools/webauthnOverride" },
-      { name: "timestampCopyOverride", path: "./tools/timestampCopyOverride" },
-      { name: "trayIconRenderer", path: "./tools/trayIconRenderer" },
-      { name: "mqttStatusMonitor", path: "./tools/mqttStatusMonitor" },
-      { name: "meetingStartDetector", path: "./tools/meetingStartDetector" },
-      { name: "overrideMicConstraints", path: "./tools/overrideMicConstraints" },
-      { name: "disableAutogain", path: "./tools/disableAutogain" },
-      { name: "ignoreSystemMute", path: "./tools/ignoreSystemMute" },
-      { name: "speakingIndicator", path: "./tools/speakingIndicator" },
-      { name: "cameraResolution", path: "./tools/cameraResolution" },
-      { name: "cameraAspectRatio", path: "./tools/cameraAspectRatio" },
-      { name: "navigationButtons", path: "./tools/navigationButtons" },
-      { name: "framelessTweaks", path: "./tools/frameless" },
-      { name: "customStickers", path: "./tools/customStickers" },
-      { name: "dockIconRenderer", path: "./tools/dockIconRenderer" },
-      { name: "preventDeviceSwitching", path: "./tools/preventDeviceSwitching" }
-    ];
-
-    // CRITICAL: These modules need ipcRenderer for IPC communication (see CLAUDE.md)
-    const modulesRequiringIpc = new Set(["settings", "theme", "trayIconRenderer", "mqttStatusMonitor", "meetingStartDetector", "webauthnOverride", "speakingIndicator", "customStickers", "dockIconRenderer"]);
-
-    let successCount = 0;
-    for (const module of modules) {
-      try {
-        const moduleInstance = require(module.path);
-        if (modulesRequiringIpc.has(module.name)) {
-          moduleInstance.init(config, ipcRenderer);
-        } else {
-          moduleInstance.init(config);
-        }
-        successCount++;
-      } catch (err) {
-        console.error(`Preload: Failed to load ${module.name}:`, err.message);
-      }
+    // Module list and IPC requirements are declared once in the registry
+    // (single source of truth; guards issue #1902 — see its header comment).
+    const { initBrowserModules } = require("./tools/moduleRegistry");
+    const result = initBrowserModules({ config, ipcRenderer, logTag: "Preload" });
+    if (result.failures.length > 0) {
+      console.error(
+        `Preload: ${result.failures.length} browser module(s) failed to initialize: ` +
+          result.failures.map((failure) => failure.name).join(", "),
+      );
     }
-    
-    console.info(`Preload: ${successCount}/${modules.length} browser modules initialized successfully`);
+    console.info(
+      `Preload: ${result.successCount}/${result.total} browser modules initialized successfully`,
+    );
 
     try {
       const ActivityManager = require("./notifications/activityManager");

@@ -182,28 +182,29 @@ When adding or modifying IPC channels, you must:
 
 ## Critical Module Initialization Requirements
 
-### Modules Requiring IPC Initialization (Issue #1902)
+### Browser Module Registry and IPC Initialization (Issue #1902)
 
-**CRITICAL: DO NOT REMOVE** - The `trayIconRenderer` and `mqttStatusMonitor` modules **MUST** be included in the list of modules that receive `ipcRenderer` during initialization in `app/browser/preload.js`.
+**CRITICAL: DO NOT REMOVE** - The `trayIconRenderer` and `mqttStatusMonitor` modules **MUST** keep `requiresIpc: true` in the browser module registry at `app/browser/tools/moduleRegistry.js`.
+
+The browser module list and the "which modules receive `ipcRenderer` during `init`" decision live in `app/browser/tools/moduleRegistry.js` — a single declarative source of truth. `app/browser/preload.js` delegates to `initBrowserModules()` instead of declaring its own list.
 
 ```javascript
-// REQUIRED: These modules need ipcRenderer for IPC communication
-const modulesRequiringIpc = ["settings", "theme", "trayIconRenderer", "mqttStatusMonitor"];
-if (modulesRequiringIpc.includes(module.name)) {
-  moduleInstance.init(config, ipcRenderer);
-}
+// In app/browser/tools/moduleRegistry.js
+{ name: "trayIconRenderer", path: "./trayIconRenderer", requiresIpc: true },
+{ name: "mqttStatusMonitor", path: "./mqttStatusMonitor", requiresIpc: true },
 ```
 
 **Why this is critical:**
 - The `trayIconRenderer` module requires `ipcRenderer` to communicate with the main process for tray icon updates
 - The `mqttStatusMonitor` module requires `ipcRenderer` to send Teams status changes to the main process for MQTT publishing
 - Without these, tray icon functionality (badge counts, notifications) and MQTT status publishing break completely
-- This fix has been accidentally removed multiple times in git history, causing recurring issues
+- This has been accidentally removed multiple times in git history, causing recurring issues
 - Most recently addressed in issue #1902
 
-**When modifying preload.js:**
-- Always verify `trayIconRenderer` and `mqttStatusMonitor` are in the condition that passes `ipcRenderer` to `init()`
-- Do NOT remove these modules from the list, even if they seem redundant
+**When adding or modifying browser modules:**
+- Add one entry to `BROWSER_MODULES` in `moduleRegistry.js` — declare `requiresIpc: true` if (and only if) the module's `init` signature is `init(config, ipcRenderer)`
+- Do NOT turn `requiresIpc` off for `trayIconRenderer` or `mqttStatusMonitor`, even if it seems redundant
+- The invariants are enforced by `tests/unit/preloadModules.test.js`: registry self-validation, critical-module presence, and a cross-check that every `requiresIpc` flag matches the real module's `init` arity. Removing a critical module or flipping its flag now fails the unit tests instead of reaching users
 - Test tray icon functionality and MQTT status publishing thoroughly after any changes to module initialization
 - Reference this documentation if unclear why these modules need special handling
 
