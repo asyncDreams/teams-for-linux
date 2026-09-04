@@ -23,20 +23,20 @@ This document tracks the research and implementation of Microsoft Graph API inte
 - [x] Security allowlist for IPC channels
 - [x] Documentation generation support
 
-### Phase 2: Enhanced Features (Not Started)
+### Phase 2: Enhanced Features
 
-- [ ] Calendar sync with desktop notifications
-- [ ] Presence status indicators
-- [ ] Mail integration
-- [ ] Error handling improvements
-- [ ] Retry logic with exponential backoff
+- [x] Presence hybrid (T2B, shipped): `graph-api-get-presence` IPC channel plus renderer-side integration into the presence aggregator (`app/presence/sync.js`, `app/browser/tools/mqttStatusMonitor.js`). 403/empty responses downgrade to DOM-only presence without surfacing an error; per-provider backoff with bounded diagnostics.
+- [x] Calendar-as-presence-provider (shipped): optional `presence.sync.calendar.*` polling of `graph-api-get-calendar-view` in `pollCalendarPresence()` to set Busy during (and optionally shortly before) meetings.
+- [x] Client resilience (shipped): `makeRequest` retries 429 (honoring `Retry-After` seconds or HTTP-date), 5xx on idempotent methods only, and refreshes the token once on 401. Non-retryable 4xx fail immediately. See `tests/unit/graphApiResilience.test.js`.
+- [ ] Calendar sync with efficient delta queries (`/me/calendarView/delta`) for a first-class calendar surface
+- [ ] Mail integration (no consumer demand recorded yet)
+- [ ] Settings UI for Graph API options (parked on the config-UX settings window, [#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
 
 ### Phase 3: User-Facing Features (Not Started)
 
-- [ ] Calendar widget/panel
+- [ ] Calendar widget/panel or next-meeting tray surface (the `graph-api-get-calendar-view` channel and preload bridge already exist and lack a consumer)
 - [ ] Quick actions for meetings
 - [ ] Mail preview notifications
-- [ ] Settings UI for Graph API options
 
 ## Architecture
 
@@ -170,9 +170,9 @@ The Teams web app token has limited scopes. Some endpoints return **403 Forbidde
 | `/me` | ✅ Works | `User.Read` |
 | `/me/calendar/events` | ✅ Works | `Calendars.Read` |
 | `/me/messages` | ✅ Works | `Mail.Read` |
-| `/me/presence` | ❌ Forbidden | `Presence.Read` |
+| `/me/presence` | ⚠️ 403 without tenant consent | `Presence.Read` |
 
-The presence endpoint requires explicit consent that the Teams web app doesn't have.
+The presence endpoint requires explicit consent that the Teams web app token doesn't always have. The shipped presence hybrid treats 403 as an expected outcome: the presence aggregator downgrades to DOM-only presence and backs off before retrying Graph.
 
 ## Future Considerations
 

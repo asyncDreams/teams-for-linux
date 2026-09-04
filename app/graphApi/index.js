@@ -1,5 +1,12 @@
 const logger = require('electron-log');
 
+// Resilience limits for makeRequest(). Retries cover transient failures only:
+// 429 throttling (any method — the request was not processed), 5xx on
+// idempotent requests, and one 401-triggered token refresh.
+const REQUEST_MAX_ATTEMPTS = 4;
+const REQUEST_BACKOFF_BASE_MS = 500;
+const REQUEST_MAX_DELAY_MS = 8000;
+
 class GraphApiClient {
   constructor(config = {}) {
     this.config = config;
@@ -8,6 +15,8 @@ class GraphApiClient {
     this.currentToken = null;
     this.tokenExpiry = null;
     this.cachedSenderInfo = null;
+    // Injectable so unit tests can run retries without real delays.
+    this._sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     logger.info('[GRAPH_API] GraphApiClient initialized', {
       enabled: this.enabled,
@@ -93,64 +102,91 @@ class GraphApiClient {
         return { success: false, error: 'Graph API is disabled' };
       }
 
-      const tokenResult = await this.acquireToken();
-      if (!tokenResult.success || !tokenResult.token) {
-        return { success: false, error: 'Failed to acquire token' };
-      }
-
-      const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
       const method = options.method || 'GET';
+      const idempotent = method === 'GET' || method === 'HEAD';
+      let forceRefresh = false;
+      let tokenRefreshRetried = false;
 
-      logger.debug('[GRAPH_API] Making request', { method, endpoint: url });
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-
-      let response;
-      try {
-        response = await fetch(url, {
-          method,
-          headers: {
-            'Authorization': `Bearer ${tokenResult.token}`,
-            'Content-Type': 'application/json',
-            ...options.headers
-          },
-          ...(options.body && { body: JSON.stringify(options.body) }),
-          signal: controller.signal
-        });
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          logger.error('[GRAPH_API] Request timed out', { endpoint: url });
-          return { success: false, error: 'Request timed out' };
+      for (let attempt = 0; attempt < REQUEST_MAX_ATTEMPTS; attempt++) {
+        const tokenResult = await this.acquireToken(forceRefresh);
+        forceRefresh = false;
+        if (!tokenResult.success || !tokenResult.token) {
+          return { success: false, error: 'Failed to acquire token' };
         }
-        throw error;
-      } finally {
-        clearTimeout(timeout);
-      }
 
-      const responseText = await response.text();
+        const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
 
-      let data = null;
-      if (responseText) {
+        logger.debug('[GRAPH_API] Making request', { method, endpoint: url });
+
+        let response;
         try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          // Intentionally catch - continue with null data for non-JSON responses (e.g., 204 No Content)
-          logger.warn('[GRAPH_API] Failed to parse response as JSON', {
-            status: response.status,
-            textPreview: responseText.substring(0, 100),
-            parseError: parseError.message
-          });
+          response = await this._executeFetch(url, method, tokenResult.token, options);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            logger.error('[GRAPH_API] Request timed out', { endpoint: url });
+            return { success: false, error: 'Request timed out' };
+          }
+          throw error;
         }
-      }
 
-      if (response.ok) {
-        logger.debug('[GRAPH_API] Request successful', {
-          status: response.status,
-          endpoint: url
-        });
-        return { success: true, data };
-      } else {
+        const responseText = await response.text();
+
+        let data = null;
+        if (responseText) {
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseError) {
+            // Intentionally catch - continue with null data for non-JSON responses (e.g., 204 No Content)
+            logger.warn('[GRAPH_API] Failed to parse response as JSON', {
+              status: response.status,
+              textPreview: responseText.substring(0, 100),
+              parseError: parseError.message
+            });
+          }
+        }
+
+        if (response.ok) {
+          logger.debug('[GRAPH_API] Request successful', {
+            status: response.status,
+            endpoint: url
+          });
+          return { success: true, data };
+        }
+
+        // 401: the cached token was rejected (revoked or expired server-side).
+        // Refresh it once and retry before giving up.
+        if (response.status === 401 && !tokenRefreshRetried) {
+          tokenRefreshRetried = true;
+          this._invalidateToken();
+          forceRefresh = true;
+          logger.warn('[GRAPH_API] Token rejected (401); refreshing and retrying once');
+          continue;
+        }
+
+        // 429 throttling: the request was not processed, so retry any method.
+        // Honor Retry-After when present, exponential backoff otherwise.
+        if (response.status === 429 && attempt + 1 < REQUEST_MAX_ATTEMPTS) {
+          const delayMs = this._retryDelayMs(response, attempt);
+          logger.warn('[GRAPH_API] Throttled (429); retrying', {
+            attempt: attempt + 1,
+            delayMs
+          });
+          await this._sleep(delayMs);
+          continue;
+        }
+
+        // 5xx: retry only when replaying the request is safe.
+        if (response.status >= 500 && idempotent && attempt + 1 < REQUEST_MAX_ATTEMPTS) {
+          const delayMs = this._retryDelayMs(response, attempt);
+          logger.warn('[GRAPH_API] Server error; retrying', {
+            status: response.status,
+            attempt: attempt + 1,
+            delayMs
+          });
+          await this._sleep(delayMs);
+          continue;
+        }
+
         logger.warn('[GRAPH_API] Request failed', {
           status: response.status,
           error: data?.error
@@ -163,6 +199,9 @@ class GraphApiClient {
         };
       }
 
+      // Exhausted all attempts on retryable statuses.
+      return { success: false, error: 'API request failed after retries' };
+
     } catch (error) {
       logger.error('[GRAPH_API] Request error:', error);
       return {
@@ -170,6 +209,54 @@ class GraphApiClient {
         error: error.message || error.toString()
       };
     }
+  }
+
+  _invalidateToken() {
+    this.currentToken = null;
+    this.tokenExpiry = null;
+  }
+
+  /** Single fetch attempt with the shared 30s timeout. */
+  async _executeFetch(url, method, token, options) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      return await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...options.headers
+        },
+        ...(options.body && { body: JSON.stringify(options.body) }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Retry delay for a retryable response: Retry-After if honored, else exponential backoff. */
+  _retryDelayMs(response, attempt) {
+    const retryAfterMs = this._parseRetryAfterMs(response.headers?.get?.('retry-after'));
+    if (retryAfterMs !== null) {
+      return Math.min(retryAfterMs, REQUEST_MAX_DELAY_MS);
+    }
+    return Math.min(REQUEST_BACKOFF_BASE_MS * 2 ** attempt, REQUEST_MAX_DELAY_MS);
+  }
+
+  /** Parse a Retry-After value (delay-seconds or HTTP-date) to milliseconds, or null. */
+  _parseRetryAfterMs(value) {
+    if (!value) return null;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return seconds * 1000;
+    }
+    const date = Date.parse(value);
+    if (!Number.isNaN(date)) {
+      return Math.max(0, date - Date.now());
+    }
+    return null;
   }
 
   _escapeHtml(text) {
