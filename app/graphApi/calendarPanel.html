@@ -32,8 +32,15 @@
     .status { font-size: 11px; padding: 3px 7px; border-radius: 999px; background: #ececff; color: #44458a; }
     .entry-actions { display: flex; gap: 6px; }
     .entry-actions button { padding: 5px 9px; font-size: 12px; }
+    .entry-actions button.responding { opacity: 0.6; pointer-events: none; }
+    .entry-actions button.active { border-color: #6264a7; color: #6264a7; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { .entry-actions button.active { color: #a7a8d8; } }
     #empty { text-align: center; padding: 64px 24px; border: 1px dashed #b7b7b7; border-radius: 12px; }
     #error { color: #b42318; font-size: 13px; margin-bottom: 12px; }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #242424; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    @media (prefers-color-scheme: dark) { #toast { background: #f5f5f5; color: #242424; } }
+    #toast.visible { opacity: 1; }
+    #toast.error { background: #b42318; color: #fff; }
   </style>
 </head>
 <body>
@@ -50,6 +57,7 @@
   <div id="error" hidden></div>
   <main id="list" aria-live="polite"></main>
   <div id="empty" class="muted" hidden>No meetings for this day.</div>
+  <div id="toast" role="status"></div>
 <script>
   const api = window.calendarPanelApi;
   const list = document.getElementById('list');
@@ -77,6 +85,27 @@
   function startMsOf(event) { return Date.parse(event?.start?.dateTime || ''); }
   function endMsOf(event) { return Date.parse(event?.end?.dateTime || ''); }
 
+  const RESPONSE_LABELS = { accepted: 'Accepted', tentative: 'Tentative', declined: 'Declined' };
+  const RESPONSE_STATUS_LABELS = { accepted: 'Accepted', tentativelyAccepted: 'Tentative', declined: 'Declined', organizer: 'Organizer', notResponded: 'Not responded' };
+
+  function isRespondable(event) {
+    if (event.isCancelled) return false;
+    const end = endMsOf(event);
+    if (!Number.isFinite(end) || end <= Date.now()) return false;
+    if (event.isOrganizer === true) return false;
+    if (event.isOrganizer === undefined && event.responseStatus === 'organizer') return false;
+    return true;
+  }
+
+  function showToast(message, isError) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.toggle('error', Boolean(isError));
+    toast.classList.add('visible');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => toast.classList.remove('visible'), 2600);
+  }
+
   function renderEntry(event) {
     const s = startMsOf(event); const e = endMsOf(event);
     const now = Date.now();
@@ -88,11 +117,23 @@
       ? '<span class="status">' + esc(event.showAs) + '</span>' : '';
     const join = event.onlineMeetingUrl
       ? '<button data-action="join" data-url="' + esc(event.onlineMeetingUrl) + '">Join</button>' : '';
+    let respondButtons = '';
+    if (isRespondable(event)) {
+      const current = event.responseStatus || 'notResponded';
+      respondButtons = ['accepted', 'tentative', 'declined'].map((value) => {
+        const active = current === value || (value === 'tentative' && current === 'tentativelyAccepted');
+        const label = RESPONSE_LABELS[value];
+        return '<button data-action="respond" data-event-id="' + esc(event.id) + '" data-response="' + value + '"'
+          + (active ? ' class="active"' : '') + '>' + label + '</button>';
+      }).join('');
+    } else if (event.responseStatus && RESPONSE_STATUS_LABELS[event.responseStatus]) {
+      respondButtons = '<span class="status">' + esc(RESPONSE_STATUS_LABELS[event.responseStatus]) + '</span>';
+    }
     return '<article class="entry' + (ongoing ? ' ongoing' : '') + '">' +
       '<div class="bar" style="background:' + (ongoing ? '#6264a7' : '#a7a8d8') + '"></div>' +
       '<div><div class="entry-title">' + title + ' ' + status + '</div>' +
       '<div class="time">' + esc(time) + '</div>' + where + '</div>' +
-      '<div class="entry-actions">' + join + '</div></article>';
+      '<div class="entry-actions">' + join + respondButtons + '</div></article>';
   }
 
   async function load() {
@@ -114,6 +155,23 @@
     summary.textContent = events.length + (events.length === 1 ? ' meeting' : ' meetings');
     list.querySelectorAll('button[data-action="join"]').forEach((button) =>
       button.addEventListener('click', () => window.open(button.dataset.url, '_blank')));
+    list.querySelectorAll('button[data-action="respond"]').forEach((button) =>
+      button.addEventListener('click', () => respondToEvent(button)));
+  }
+
+  async function respondToEvent(button) {
+    const eventId = button.dataset.eventId;
+    const response = button.dataset.response;
+    const siblings = Array.from(button.parentElement.querySelectorAll('button[data-action="respond"]'));
+    siblings.forEach((b) => b.classList.add('responding'));
+    const result = await api.respond({ eventId, response });
+    siblings.forEach((b) => b.classList.remove('responding'));
+    if (!result?.success) {
+      showToast(result?.error || 'Could not send your response.', true);
+      return;
+    }
+    showToast('Response sent: ' + RESPONSE_LABELS[response]);
+    await load();
   }
 
   refreshButton.addEventListener('click', async () => {

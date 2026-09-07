@@ -107,6 +107,7 @@ const allowedChannels = new Set([
   // Calendar panel window (delta-query sync backend)
   'calendar-panel-get-events',
   'calendar-panel-refresh',
+  'calendar-panel-respond',
 
   // Join meeting dialog
   'join-meeting-submit',

@@ -23,6 +23,7 @@
  */
 
 const logger = require('electron-log');
+const { parseRespondPayload, buildRespondRequest, applyResponseStatus, isEventRespondable, RESPONSE_STATUS } = require('./meetingActions');
 
 /** Fallback window when a consumer does not pass one. */
 const DEFAULT_WINDOW_DAYS = 3;
@@ -34,7 +35,7 @@ const DELTA_LINK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 15 * 60 * 1000;
 
 /** Fields requested from Graph for cached events. */
-const EVENT_SELECT = 'subject,bodyPreview,start,end,showAs,isAllDay,isCancelled,onlineMeetingUrl,location,attendees,organizer';
+const EVENT_SELECT = 'subject,bodyPreview,start,end,showAs,isAllDay,isCancelled,onlineMeetingUrl,location,attendees,organizer,responseStatus,isOrganizer';
 
 /**
  * Pure: drop events that cannot matter to any consumer anymore.
@@ -234,6 +235,29 @@ class CalendarDeltaSync {
     return selectEvents([...this._cache.values()], startMs, endMs);
   }
 
+  /**
+   * One cached event by id, or null. Pure read.
+   * @param {string} eventId
+   */
+  getEventById(eventId) {
+    return this._cache.get(eventId) || null;
+  }
+
+  /**
+   * Optimistically patch one cached event (used by quick actions so the UI
+   * reflects a successful respond immediately; the next delta sync confirms).
+   * @param {string} eventId
+   * @param {object} patch Shallow-merged into the cached event.
+   * @returns {object|null} The patched event, or null when unknown.
+   */
+  patchEvent(eventId, patch) {
+    const existing = this._cache.get(eventId);
+    if (!existing) return null;
+    const updated = { ...existing, ...patch };
+    this._cache.set(eventId, updated);
+    return updated;
+  }
+
   /** Number of cached events (diagnostics/tests). */
   get size() {
     return this._cache.size;
@@ -301,6 +325,36 @@ function registerCalendarPanelHandlers(ipcMain, { client, config, deltaSync = nu
     }
   });
 
+  // Respond to a meeting invitation (accept/tentative/decline) and apply an
+  // optimistic cache patch; the next delta sync confirms with the server.
+  ipcMain.handle('calendar-panel-respond', async (_event, payload) => {
+    if (!client) return { success: false, error: 'Graph API not enabled' };
+    const parsed = parseRespondPayload(payload);
+    if (!parsed.ok) return { success: false, error: parsed.error };
+    try {
+      const cached = deltaSync ? deltaSync.getEventById(parsed.eventId) : null;
+      if (deltaSync && !cached) {
+        return { success: false, error: 'Meeting not found in the local calendar cache' };
+      }
+      if (cached && !isEventRespondable(cached, nowMs())) {
+        return { success: false, error: 'This meeting cannot be responded to (past, cancelled, or organized by you)' };
+      }
+      const { endpoint, options } = buildRespondRequest(parsed.eventId, parsed.response, parsed.sendResponse);
+      const result = await client.makeRequest(endpoint, options);
+      if (!result?.success) return result;
+      let event = null;
+      if (deltaSync && cached) {
+        event = deltaSync.patchEvent(parsed.eventId, applyResponseStatus(cached, parsed.response));
+        // Confirm in the background; the response above already succeeded.
+        deltaSync.sync().catch(() => {});
+      }
+      return { success: true, response: parsed.response, event };
+    } catch (error) {
+      logger.error('[GRAPH_API] calendar-panel-respond failed:', { message: error.message });
+      return { success: false, error: error.message };
+    }
+  });
+
   logger.debug('[GRAPH_API] Calendar panel IPC handlers registered');
 }
 
@@ -313,4 +367,5 @@ module.exports = {
   EVENT_SELECT,
   DEFAULT_WINDOW_DAYS,
   MAX_WINDOW_DAYS,
+  RESPONSE_STATUS,
 };

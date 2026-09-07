@@ -38,7 +38,7 @@ This document tracks the research and implementation of Microsoft Graph API inte
 - [x] Next-meeting tray surface (shipped — see Phase 2)
 - [x] Calendar panel (shipped): `app/graphApi/calendarPanelWindow.js` opens a small frameless day/week window fed by the delta-sync cache (`calendar-panel-get-events` / `calendar-panel-refresh` IPC, allowlisted). Includes a refresh button and deep links into Teams for meetings with an online join URL. Mirrors the notification-history window pattern (window + preload + html).
 - [x] Mail preview notifications (shipped — see Phase 2)
-- [ ] Quick actions for meetings
+- [x] Quick actions for meetings (shipped): the calendar panel offers Accept / Tentative / Decline via `calendar-panel-respond`, backed by `app/graphApi/meetingActions.js` (Graph respond endpoints `/me/events/{id}/accept|tentativelyAccept|decline`). Organizer, past, and cancelled events are excluded; responses apply an optimistic `responseStatus` patch to the delta cache and a background sync confirms. Requires `Calendars.ReadWrite` consent; 403 surfaces as a panel error without crashing. See `tests/unit/meetingActions.test.js`.
 
 ## Architecture
 
