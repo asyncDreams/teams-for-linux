@@ -2,6 +2,8 @@ const { Tray, Menu, ipcMain, nativeImage } = require("electron");
 const os = require("node:os");
 const isMac = os.platform() === "darwin";
 
+const { formatNextMeeting } = require("../graphApi/nextMeetingPoller");
+
 const PRESENCE_LABELS = {
   1: "Available",
   2: "Busy",
@@ -11,16 +13,25 @@ const PRESENCE_LABELS = {
 };
 
 /**
- * Composes the tray tooltip from the last Teams badge/presence update plus the
- * local notification-history unread count. Kept pure so it is unit-testable.
+ * Composes the tray tooltip from the last Teams badge/presence update, the
+ * local notification-history unread count, and the next-meeting surface.
+ * Kept pure so it is unit-testable.
  * @param {string} baseTitle
  * @param {number} count Teams unread badge count
  * @param {number} historyUnread local notification-history unread count
  * @param {number} [presence]
  * @param {string} [presenceSource]
+ * @param {string | null} [nextMeeting] pre-formatted next-meeting segment
  * @returns {string}
  */
-function buildTrayTooltip(baseTitle, count, historyUnread, presence, presenceSource) {
+function buildTrayTooltip(
+  baseTitle,
+  count,
+  historyUnread,
+  presence,
+  presenceSource,
+  nextMeeting
+) {
   const parts = [String(baseTitle || "")];
   if (Number(count) > 0) parts.push(`(${Number(count)})`);
   if (Number(historyUnread) > 0) parts.push(`· ${Number(historyUnread)} unread`);
@@ -28,6 +39,7 @@ function buildTrayTooltip(baseTitle, count, historyUnread, presence, presenceSou
     const source = typeof presenceSource === "string" && presenceSource ? ` · Source: ${presenceSource}` : "";
     parts.push(`— ${PRESENCE_LABELS[presence]}${source}`);
   }
+  if (nextMeeting) parts.push(`— ${nextMeeting}`);
   return parts.filter(Boolean).join(" ");
 }
 
@@ -38,6 +50,7 @@ class ApplicationTray {
     this.appMenu = appMenu;
     this.config = config;
     this.historyUnread = 0;
+    this.nextMeeting = null;
     this.lastUpdate = { icon: null, flash: false, count: 0, presence: null, presenceSource: null };
 
     this.tray = new Tray(this.getIconImage(this.iconPath));
@@ -111,14 +124,29 @@ class ApplicationTray {
     this.#renderTooltip();
   }
 
+  /**
+   * Update the next-meeting segment of the tooltip.
+   * @param {{ event: object, state: 'upcoming' | 'ongoing' } | null} meeting
+   *   Poller output; null clears the segment.
+   */
+  setNextMeeting(meeting) {
+    if (this.tray?.isDestroyed?.()) return;
+    this.nextMeeting = meeting || null;
+    this.#renderTooltip();
+  }
+
   #renderTooltip() {
     if (!this.tray || this.tray.isDestroyed()) return;
+    const nextMeetingSegment = this.nextMeeting
+      ? formatNextMeeting(this.nextMeeting.event, this.nextMeeting.state, Date.now())
+      : null;
     this.tray.setToolTip(buildTrayTooltip(
       this.config.appTitle,
       this.lastUpdate.count,
       this.historyUnread,
       this.lastUpdate.presence,
-      this.lastUpdate.presenceSource
+      this.lastUpdate.presenceSource,
+      nextMeetingSegment
     ));
   }
 

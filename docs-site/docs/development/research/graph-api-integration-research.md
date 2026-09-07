@@ -28,13 +28,15 @@ This document tracks the research and implementation of Microsoft Graph API inte
 - [x] Presence hybrid (T2B, shipped): `graph-api-get-presence` IPC channel plus renderer-side integration into the presence aggregator (`app/presence/sync.js`, `app/browser/tools/mqttStatusMonitor.js`). 403/empty responses downgrade to DOM-only presence without surfacing an error; per-provider backoff with bounded diagnostics.
 - [x] Calendar-as-presence-provider (shipped): optional `presence.sync.calendar.*` polling of `graph-api-get-calendar-view` in `pollCalendarPresence()` to set Busy during (and optionally shortly before) meetings.
 - [x] Client resilience (shipped): `makeRequest` retries 429 (honoring `Retry-After` seconds or HTTP-date), 5xx on idempotent methods only, and refreshes the token once on 401. Non-retryable 4xx fail immediately. See `tests/unit/graphApiResilience.test.js`.
+- [x] Next-meeting tray surface (shipped): `app/graphApi/nextMeetingPoller.js` polls `graph-api-get-calendar-view` and renders the current or next busy-ish meeting in the tray tooltip via `graphApi.nextMeeting.*` (opt-in, off by default). Ongoing meetings show minutes remaining; upcoming ones show a countdown. See `tests/unit/nextMeetingPoller.test.js`.
 - [ ] Calendar sync with efficient delta queries (`/me/calendarView/delta`) for a first-class calendar surface
 - [ ] Mail integration (no consumer demand recorded yet)
 - [ ] Settings UI for Graph API options (parked on the config-UX settings window, [#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
 
-### Phase 3: User-Facing Features (Not Started)
+### Phase 3: User-Facing Features
 
-- [ ] Calendar widget/panel or next-meeting tray surface (the `graph-api-get-calendar-view` channel and preload bridge already exist and lack a consumer)
+- [x] Next-meeting tray surface (shipped — see Phase 2)
+- [ ] Calendar widget/panel (a richer in-app surface than the tray tooltip)
 - [ ] Quick actions for meetings
 - [ ] Mail preview notifications
 
@@ -46,6 +48,7 @@ This document tracks the research and implementation of Microsoft Graph API inte
 |------|---------|
 | `app/graphApi/index.js` | GraphApiClient class - token acquisition, API requests |
 | `app/graphApi/ipcHandlers.js` | IPC handler registration for renderer access |
+| `app/graphApi/nextMeetingPoller.js` | Next-meeting tray surface: polls the calendar view and publishes the current/next meeting to the tray tooltip |
 
 ### Files Modified
 

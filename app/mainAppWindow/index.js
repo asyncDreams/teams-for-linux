@@ -873,6 +873,13 @@ exports.setNotificationHistoryService = function (service) {
   }
 };
 
+// Hands the tray (when trayIconEnabled) to a consumer such as the
+// next-meeting poller; null when the tray is disabled or not yet created.
+// Consumers must treat null as "surface unavailable" and stay idle.
+exports.getTray = function () {
+  return menus?.tray ?? null;
+};
+
 /**
  * Navigates the main window to a Teams deep link (https://teams… or
  * msteams://…). Legacy hosts are canonicalized; invalid or external URLs are

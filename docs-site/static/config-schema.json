@@ -1275,9 +1275,14 @@
       "name": "graphApi",
       "type": "object",
       "default": {
-        "enabled": false
+        "enabled": false,
+        "nextMeeting": {
+          "enabled": false,
+          "lookaheadMinutes": 30,
+          "pollIntervalMs": 60000
+        }
       },
-      "description": "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.)",
+      "description": "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.). nextMeeting.enabled: show the next (or current) meeting in the tray tooltip; requires graphApi.enabled. nextMeeting.lookaheadMinutes: how far ahead to look for the next meeting. nextMeeting.pollIntervalMs: calendar poll interval in milliseconds.",
       "applyMode": "restart",
       "fields": [
         {
@@ -1285,6 +1290,24 @@
           "type": "boolean",
           "default": false,
           "description": "Enable the Microsoft Graph API integration for calendar and mail access."
+        },
+        {
+          "path": "nextMeeting.enabled",
+          "type": "boolean",
+          "default": false,
+          "description": "Show the current or next meeting in the tray tooltip; requires graphApi.enabled and a tray icon."
+        },
+        {
+          "path": "nextMeeting.lookaheadMinutes",
+          "type": "number",
+          "default": 30,
+          "description": "How far ahead (minutes) the next-meeting tray tooltip searches the calendar; clamped to 5-120."
+        },
+        {
+          "path": "nextMeeting.pollIntervalMs",
+          "type": "number",
+          "default": 60000,
+          "description": "Poll interval in milliseconds for the next-meeting tray tooltip calendar fetch; clamped to 15s-10m."
         }
       ]
     },

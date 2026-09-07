@@ -659,17 +659,26 @@ All topics use retained messages by default, ensuring subscribers receive the la
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `graphApi.enabled` | `boolean` | `false` | Enable Microsoft Graph API integration for calendar and mail access |
+| `graphApi.nextMeeting.enabled` | `boolean` | `false` | Show the current or next meeting in the tray tooltip (requires `graphApi.enabled` and a tray icon) |
+| `graphApi.nextMeeting.lookaheadMinutes` | `number` | `30` | How far ahead the tooltip searches the calendar for the next meeting (clamped to 5–120) |
+| `graphApi.nextMeeting.pollIntervalMs` | `number` | `60000` | Calendar poll interval for the next-meeting tooltip (clamped to 15s–10m) |
 
 ```json title="Example Configuration"
 {
   "graphApi": {
-    "enabled": true
+    "enabled": true,
+    "nextMeeting": {
+      "enabled": true
+    }
   }
 }
 ```
 
 > [!NOTE]
 > This feature uses Teams' existing authentication to access Microsoft Graph API endpoints. No additional login required. Currently supports reading user profile, calendar events, and mail messages.
+
+> [!TIP]
+> With `graphApi.nextMeeting.enabled`, the tray tooltip appends the current or next meeting: ongoing meetings render as `Meeting now: <title> (<n>m left)` and upcoming ones as `Next: <title> in <n>m`. Cancelled, all-day, and explicitly-Free events are never shown.
 
 ### Quick Chat
 

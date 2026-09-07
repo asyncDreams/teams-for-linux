@@ -16,6 +16,7 @@ const MQTTMediaStatusService = require("./mqtt/mediaStatusService");
 const HomeAssistantDiscovery = require("./mqtt/homeAssistantDiscovery");
 const GraphApiClient = require("./graphApi");
 const { registerGraphApiHandlers } = require("./graphApi/ipcHandlers");
+const { NextMeetingPoller } = require("./graphApi/nextMeetingPoller");
 const { validateIpcChannel, allowedChannels } = require("./security/ipcValidator");
 const { sanitize: sanitizePii } = require("./utils/logSanitizer");
 const { register: registerGlobalShortcuts, sendKeyboardEventToWindow } = require("./globalShortcuts");
@@ -119,6 +120,7 @@ let mqttClient = null;
 let mqttMediaStatusService = null;
 let haDiscovery = null;
 let graphApiClient = null;
+let nextMeetingPoller = null;
 let quickChatManager = null;
 let presenceDiagnostics = {
   enabled: false,
@@ -230,6 +232,10 @@ if (gotTheLock) {
   app.on("will-quit", async () => {
     perf.stopMemorySampling();
     console.debug("will-quit");
+    if (nextMeetingPoller) {
+      nextMeetingPoller.stop();
+      nextMeetingPoller = null;
+    }
     if (mqttClient) {
       await mqttClient.disconnect();
     }
@@ -747,6 +753,15 @@ function initializeGraphApiClient() {
   // Graph sendChatMessage; service gracefully falls back to deepLink when absent.
   if (graphApiClient && typeof notificationService.setGraphApiClient === "function") {
     notificationService.setGraphApiClient(graphApiClient);
+  }
+
+  // Next-meeting tray surface (Phase 3 calendar consumer): poll the Graph
+  // calendar and render the current/next meeting in the tray tooltip. Requires
+  // graphApi.enabled, nextMeeting.enabled, and a tray icon to be useful.
+  const tray = mainAppWindow.getTray();
+  if (config.graphApi?.nextMeeting?.enabled && graphApiClient && tray) {
+    nextMeetingPoller = new NextMeetingPoller({ client: graphApiClient, config, tray });
+    nextMeetingPoller.start();
   }
 }
 
