@@ -104,6 +104,10 @@ const allowedChannels = new Set([
   'graph-api-send-chat-message',
   'graph-api-get-presence',
 
+  // Calendar panel window (delta-query sync backend)
+  'calendar-panel-get-events',
+  'calendar-panel-refresh',
+
   // Join meeting dialog
   'join-meeting-submit',
   'join-meeting-cancel',

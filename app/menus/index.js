@@ -20,6 +20,7 @@ const teamsHosts = require("../config/defaults");
 const { SpellCheckProvider } = require("../spellCheckProvider");
 const DocumentationWindow = require("../documentationWindow");
 const NotificationHistoryWindow = require("../notifications/historyWindow");
+const CalendarPanelWindow = require("../graphApi/calendarPanelWindow");
 const DiagnosticsWindow = require("../diagnostics/diagnosticsWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
@@ -50,6 +51,7 @@ class Menus {
     this.allowQuit = false;
     this.documentationWindow = new DocumentationWindow();
     this.notificationHistoryWindow = new NotificationHistoryWindow(this.window);
+    this.calendarPanelWindow = new CalendarPanelWindow(this.window);
     this.diagnosticsWindow = new DiagnosticsWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
     this.joinMeetingDialog = new JoinMeetingDialog(
@@ -656,6 +658,21 @@ class Menus {
       return;
     }
     this.notificationHistoryWindow.show();
+  }
+
+  /** Open the Tools > Calendar panel (Graph delta-sync calendar surface). */
+  openCalendarPanel() {
+    if (this.configGroup.startupConfig.graphApi?.enabled !== true) {
+      dialog.showMessageBox(this.window, {
+        type: "info",
+        title: "Calendar",
+        message: "Calendar panel is disabled",
+        detail:
+          "Set graphApi.enabled to true in your configuration, then restart Teams for Linux.",
+      });
+      return;
+    }
+    this.calendarPanelWindow.show();
   }
 
   openDiagnostics() {

@@ -880,6 +880,11 @@ exports.getTray = function () {
   return menus?.tray ?? null;
 };
 
+/** Accessor for the Menus instance (null before onAppReady). */
+exports.getMenus = function () {
+  return menus;
+};
+
 /**
  * Navigates the main window to a Teams deep link (https://teams… or
  * msteams://…). Legacy hosts are canonicalized; invalid or external URLs are

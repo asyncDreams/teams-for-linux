@@ -17,6 +17,8 @@ const HomeAssistantDiscovery = require("./mqtt/homeAssistantDiscovery");
 const GraphApiClient = require("./graphApi");
 const { registerGraphApiHandlers } = require("./graphApi/ipcHandlers");
 const { NextMeetingPoller } = require("./graphApi/nextMeetingPoller");
+const { CalendarDeltaSync, registerCalendarPanelHandlers } = require("./graphApi/calendarDeltaSync");
+const { MailPoller } = require("./graphApi/mailPoller");
 const { validateIpcChannel, allowedChannels } = require("./security/ipcValidator");
 const { sanitize: sanitizePii } = require("./utils/logSanitizer");
 const { register: registerGlobalShortcuts, sendKeyboardEventToWindow } = require("./globalShortcuts");
@@ -121,6 +123,8 @@ let mqttMediaStatusService = null;
 let haDiscovery = null;
 let graphApiClient = null;
 let nextMeetingPoller = null;
+let calendarDeltaSync = null;
+let mailPoller = null;
 let quickChatManager = null;
 let presenceDiagnostics = {
   enabled: false,
@@ -235,6 +239,14 @@ if (gotTheLock) {
     if (nextMeetingPoller) {
       nextMeetingPoller.stop();
       nextMeetingPoller = null;
+    }
+    if (calendarDeltaSync) {
+      calendarDeltaSync.stop();
+      calendarDeltaSync = null;
+    }
+    if (mailPoller) {
+      mailPoller.stop();
+      mailPoller = null;
     }
     if (mqttClient) {
       await mqttClient.disconnect();
@@ -762,6 +774,33 @@ function initializeGraphApiClient() {
   if (config.graphApi?.nextMeeting?.enabled && graphApiClient && tray) {
     nextMeetingPoller = new NextMeetingPoller({ client: graphApiClient, config, tray });
     nextMeetingPoller.start();
+  }
+
+  // Delta-query calendar sync (Phase 2) backing the Tools > Calendar panel
+  // (Phase 3 richer calendar surface). graphApi.calendar.enabled is opt-in;
+  // when off, the panel handlers fall back to direct calendarView reads.
+  if (graphApiClient) {
+    if (config.graphApi?.calendar?.enabled) {
+      calendarDeltaSync = new CalendarDeltaSync({ client: graphApiClient, config });
+      calendarDeltaSync.start();
+    }
+    registerCalendarPanelHandlers(ipcMain, {
+      client: graphApiClient,
+      config,
+      deltaSync: calendarDeltaSync,
+    });
+
+    // Mail preview notifications (Phase 3): announce new inbox mail through
+    // the shared NotificationService pipeline. Requires graphApi.enabled,
+    // mailPreview.enabled, and Mail.Read consent.
+    if (config.graphApi?.mailPreview?.enabled && notificationService) {
+      mailPoller = new MailPoller({
+        client: graphApiClient,
+        config,
+        notifier: notificationService,
+      });
+      mailPoller.start();
+    }
   }
 }
 

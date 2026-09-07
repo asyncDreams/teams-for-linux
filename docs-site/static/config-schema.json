@@ -1280,9 +1280,17 @@
           "enabled": false,
           "lookaheadMinutes": 30,
           "pollIntervalMs": 60000
+        },
+        "calendar": {
+          "enabled": false,
+          "syncIntervalMs": 300000
+        },
+        "mailPreview": {
+          "enabled": false,
+          "pollIntervalMs": 300000
         }
       },
-      "description": "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.). nextMeeting.enabled: show the next (or current) meeting in the tray tooltip; requires graphApi.enabled. nextMeeting.lookaheadMinutes: how far ahead to look for the next meeting. nextMeeting.pollIntervalMs: calendar poll interval in milliseconds.",
+      "description": "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.). nextMeeting.enabled: show the next (or current) meeting in the tray tooltip; requires graphApi.enabled. nextMeeting.lookaheadMinutes: how far ahead to look for the next meeting. nextMeeting.pollIntervalMs: calendar poll interval in milliseconds. calendar.enabled: keep an in-memory calendar cache refreshed with Graph delta queries and enable the Tools > Calendar panel; requires graphApi.enabled. calendar.syncIntervalMs: background delta-sync interval in milliseconds. mailPreview.enabled: show a system notification for new inbox mail; requires graphApi.enabled. mailPreview.pollIntervalMs: inbox poll interval in milliseconds.",
       "applyMode": "restart",
       "fields": [
         {
@@ -1308,6 +1316,30 @@
           "type": "number",
           "default": 60000,
           "description": "Poll interval in milliseconds for the next-meeting tray tooltip calendar fetch; clamped to 15s-10m."
+        },
+        {
+          "path": "calendar.enabled",
+          "type": "boolean",
+          "default": false,
+          "description": "Keep an in-memory calendar refreshed with Graph delta queries and enable the Tools > Calendar panel; requires graphApi.enabled."
+        },
+        {
+          "path": "calendar.syncIntervalMs",
+          "type": "number",
+          "default": 300000,
+          "description": "Background calendar delta-sync interval in milliseconds; clamped to 30s-60m."
+        },
+        {
+          "path": "mailPreview.enabled",
+          "type": "boolean",
+          "default": false,
+          "description": "Show a system notification (with history entry) for new inbox mail; requires graphApi.enabled and Microsoft Mail.Read consent."
+        },
+        {
+          "path": "mailPreview.pollIntervalMs",
+          "type": "number",
+          "default": 300000,
+          "description": "Inbox poll interval in milliseconds for mail preview notifications; clamped to 1m-30m."
         }
       ]
     },

@@ -29,16 +29,16 @@ This document tracks the research and implementation of Microsoft Graph API inte
 - [x] Calendar-as-presence-provider (shipped): optional `presence.sync.calendar.*` polling of `graph-api-get-calendar-view` in `pollCalendarPresence()` to set Busy during (and optionally shortly before) meetings.
 - [x] Client resilience (shipped): `makeRequest` retries 429 (honoring `Retry-After` seconds or HTTP-date), 5xx on idempotent methods only, and refreshes the token once on 401. Non-retryable 4xx fail immediately. See `tests/unit/graphApiResilience.test.js`.
 - [x] Next-meeting tray surface (shipped): `app/graphApi/nextMeetingPoller.js` polls `graph-api-get-calendar-view` and renders the current or next busy-ish meeting in the tray tooltip via `graphApi.nextMeeting.*` (opt-in, off by default). Ongoing meetings show minutes remaining; upcoming ones show a countdown. See `tests/unit/nextMeetingPoller.test.js`.
-- [ ] Calendar sync with efficient delta queries (`/me/calendarView/delta`) for a first-class calendar surface
-- [ ] Mail integration (no consumer demand recorded yet)
+- [x] Calendar sync with efficient delta queries (shipped): `app/graphApi/calendarDeltaSync.js` implements an incremental `/me/calendarView/delta` engine (delta-link persistence, `@removed` tombstones, 7-day re-baselining, stale-event pruning) consumed by the calendar panel. Falls back to direct `calendarView` calls when disabled. See `tests/unit/calendarDeltaSync.test.js`.
+- [x] Mail preview notifications (shipped): `app/graphApi/mailPoller.js` polls `/me/messages` (opt-in `graphApi.mailPreview.*`, off by default) and announces new mail through `NotificationService.showMailPreview()` so history, sounds, and click actions match Teams notifications. Dedup is a bounded id set plus a newest-received cursor; the first poll only announces mail from the last 5 minutes to avoid a history replay. See `tests/unit/mailPoller.test.js`.
 - [ ] Settings UI for Graph API options (parked on the config-UX settings window, [#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
 
 ### Phase 3: User-Facing Features
 
 - [x] Next-meeting tray surface (shipped — see Phase 2)
-- [ ] Calendar widget/panel (a richer in-app surface than the tray tooltip)
+- [x] Calendar panel (shipped): `app/graphApi/calendarPanelWindow.js` opens a small frameless day/week window fed by the delta-sync cache (`calendar-panel-get-events` / `calendar-panel-refresh` IPC, allowlisted). Includes a refresh button and deep links into Teams for meetings with an online join URL. Mirrors the notification-history window pattern (window + preload + html).
+- [x] Mail preview notifications (shipped — see Phase 2)
 - [ ] Quick actions for meetings
-- [ ] Mail preview notifications
 
 ## Architecture
 

@@ -80,6 +80,27 @@ class NotificationService {
     this.#historyService = historyService;
   }
 
+  /**
+   * Show a mail-preview notification from the Graph mail poller. Main-process
+   * callers use this instead of the renderer IPC path; it renders through the
+   * same #showNotification pipeline so history, sounds, and click actions
+   * behave identically to Teams notifications.
+   * @param {{ title: string, body: string, kind: string, conversation: string, deepLink: string|null, sender: object }} payload
+   */
+  showMailPreview(payload) {
+    const options = {
+      notificationId: crypto.randomUUID(),
+      title: String(payload?.title || "New mail"),
+      body: String(payload?.body || ""),
+      kind: payload?.kind || "mail",
+      sender: payload?.sender,
+      conversation: payload?.conversation,
+      deepLink: payload?.deepLink,
+      icon: undefined,
+    };
+    return this.#showNotification(options);
+  }
+
   initialize() {
     // Play notification sound for Teams messages and calls
     ipcMain.handle("play-notification-sound", this.#handlePlayNotificationSound.bind(this));

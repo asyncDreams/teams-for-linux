@@ -19,6 +19,7 @@ exports = module.exports = (Menus) => ({
       click: () => Menus.returnToTeams(),
     },
     getViewMenu(Menus),
+    getToolsMenu(Menus),
     ...(Menus.configGroup.startupConfig.quickChat?.enabled
       ? [
           {
@@ -143,6 +144,18 @@ function getViewMenu(Menus) {
       {
         label: "Notification History",
         click: () => Menus.openNotificationHistory(),
+      },
+    ],
+  };
+}
+
+function getToolsMenu(Menus) {
+  return {
+    label: "Tools",
+    submenu: [
+      {
+        label: "Calendar",
+        click: () => Menus.openCalendarPanel(),
       },
     ],
   };

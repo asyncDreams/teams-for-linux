@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar</title>
+  <style>
+    :root { color-scheme: light dark; font-family: "Segoe UI", system-ui, sans-serif; background: #f7f8fc; color: #242424; }
+    @media (prefers-color-scheme: dark) { :root { background: #202020; color: #f5f5f5; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
+    .muted { color: #6b6b6b; font-size: 13px; }
+    @media (prefers-color-scheme: dark) { .muted { color: #bdbdbd; } }
+    button { font: inherit; border-radius: 8px; border: 1px solid #c8c8c8; padding: 8px 14px; background: #fff; color: inherit; cursor: pointer; }
+    @media (prefers-color-scheme: dark) { button { background: #2b2b2b; border-color: #555; } }
+    button.primary { background: #6264a7; color: white; border-color: #6264a7; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    button:focus-visible { outline: 2px solid #6264a7; outline-offset: 1px; }
+    nav { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    #dayLabel { font-weight: 600; min-width: 200px; text-align: center; }
+    #list { display: grid; gap: 10px; }
+    .entry { display: grid; grid-template-columns: 4px 1fr auto; gap: 12px; align-items: start; padding: 14px; background: white; border: 1px solid #e4e4e4; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+    @media (prefers-color-scheme: dark) { .entry { background: #2b2b2b; border-color: #444; } }
+    .entry.ongoing { border-left: 4px solid #6264a7; padding-left: 11px; }
+    .bar { border-radius: 4px; height: 100%; min-height: 40px; }
+    .entry-title { font-weight: 650; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .time { font-size: 13px; color: #6264a7; font-variant-numeric: tabular-nums; }
+    .where { margin-top: 3px; color: #6b6b6b; font-size: 13px; }
+    .status { font-size: 11px; padding: 3px 7px; border-radius: 999px; background: #ececff; color: #44458a; }
+    .entry-actions { display: flex; gap: 6px; }
+    .entry-actions button { padding: 5px 9px; font-size: 12px; }
+    #empty { text-align: center; padding: 64px 24px; border: 1px dashed #b7b7b7; border-radius: 12px; }
+    #error { color: #b42318; font-size: 13px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Calendar</h1><div class="muted" id="summary">Loading…</div></div>
+    <button id="refresh" class="primary">Refresh</button>
+  </header>
+  <nav>
+    <button id="prev" aria-label="Previous day">‹</button>
+    <span id="dayLabel" aria-live="polite"></span>
+    <button id="next" aria-label="Next day">›</button>
+    <button id="today">Today</button>
+  </nav>
+  <div id="error" hidden></div>
+  <main id="list" aria-live="polite"></main>
+  <div id="empty" class="muted" hidden>No meetings for this day.</div>
+<script>
+  const api = window.calendarPanelApi;
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  const errorBox = document.getElementById('error');
+  const summary = document.getElementById('summary');
+  const dayLabel = document.getElementById('dayLabel');
+  const refreshButton = document.getElementById('refresh');
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+  let dayOffset = 0;
+
+  function dayBounds(offset) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() + offset);
+    return { startMs: start.getTime(), endMs: start.getTime() + 24 * 60 * 60 * 1000 };
+  }
+  function fmtTime(ms) {
+    try { return new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(new Date(ms)); } catch { return ''; }
+  }
+  function fmtDay(offset) {
+    const { startMs } = dayBounds(offset);
+    try { return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(startMs)); } catch { return ''; }
+  }
+  function startMsOf(event) { return Date.parse(event?.start?.dateTime || ''); }
+  function endMsOf(event) { return Date.parse(event?.end?.dateTime || ''); }
+
+  function renderEntry(event) {
+    const s = startMsOf(event); const e = endMsOf(event);
+    const now = Date.now();
+    const ongoing = s <= now && now < e;
+    const title = esc(event.subject || '(No title)');
+    const time = fmtTime(s) + ' – ' + fmtTime(e);
+    const where = event.location?.displayName ? '<div class="where">' + esc(event.location.displayName) + '</div>' : '';
+    const status = event.showAs && event.showAs !== 'busy'
+      ? '<span class="status">' + esc(event.showAs) + '</span>' : '';
+    const join = event.onlineMeetingUrl
+      ? '<button data-action="join" data-url="' + esc(event.onlineMeetingUrl) + '">Join</button>' : '';
+    return '<article class="entry' + (ongoing ? ' ongoing' : '') + '">' +
+      '<div class="bar" style="background:' + (ongoing ? '#6264a7' : '#a7a8d8') + '"></div>' +
+      '<div><div class="entry-title">' + title + ' ' + status + '</div>' +
+      '<div class="time">' + esc(time) + '</div>' + where + '</div>' +
+      '<div class="entry-actions">' + join + '</div></article>';
+  }
+
+  async function load() {
+    errorBox.hidden = true;
+    dayLabel.textContent = fmtDay(dayOffset);
+    const { startMs, endMs } = dayBounds(dayOffset);
+    const result = await api.getEvents({ startMs, endMs });
+    if (!result?.success) {
+      list.innerHTML = '';
+      empty.hidden = true;
+      errorBox.hidden = false;
+      errorBox.textContent = result?.error || 'Could not load the calendar. Check that graphApi.enabled is set and the calendar is shared with Teams.';
+      summary.textContent = '';
+      return;
+    }
+    const events = result.events || [];
+    list.innerHTML = events.map(renderEntry).join('');
+    empty.hidden = events.length !== 0;
+    summary.textContent = events.length + (events.length === 1 ? ' meeting' : ' meetings');
+    list.querySelectorAll('button[data-action="join"]').forEach((button) =>
+      button.addEventListener('click', () => window.open(button.dataset.url, '_blank')));
+  }
+
+  refreshButton.addEventListener('click', async () => {
+    refreshButton.disabled = true;
+    refreshButton.textContent = 'Syncing…';
+    try {
+      const result = await api.refresh();
+      if (!result?.success) {
+        errorBox.hidden = false;
+        errorBox.textContent = result?.error || 'Refresh failed.';
+      }
+    } finally {
+      refreshButton.disabled = false;
+      refreshButton.textContent = 'Refresh';
+      await load();
+    }
+  });
+  document.getElementById('prev').addEventListener('click', () => { dayOffset -= 1; load(); });
+  document.getElementById('next').addEventListener('click', () => { dayOffset += 1; load(); });
+  document.getElementById('today').addEventListener('click', () => { dayOffset = 0; load(); });
+  load();
+</script>
+</body>
+</html>
