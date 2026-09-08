@@ -62,7 +62,15 @@ class CustomNotificationManager {
       for (const toast of this.#activeToasts) {
         if (toast.getWebContents() === event.sender) { toast.close(); break; }
       }
-      if (this.#mainWindow && !this.#mainWindow.isDestroyed()) { this.#mainWindow.show(); this.#mainWindow.focus(); }
+      // Restore the main window even when it is minimized or hidden to tray —
+      // a bare show() leaves a minimized window invisible ("notifications
+      // fire but no screen"). The mainAppWindow module's restoreWindow
+      // handles both cases and guards against a destroyed window.
+      if (typeof this.#mainWindow?.restoreWindow === 'function') {
+        this.#mainWindow.restoreWindow();
+      } else if (typeof this.#mainWindow?.show === 'function') {
+        this.#mainWindow.show();
+      }
     } catch (error) {
       console.error('[CustomNotificationManager] Error handling toast click:', error);
     }
@@ -73,7 +81,11 @@ class CustomNotificationManager {
       for (const toast of this.#activeToasts) {
         if (toast.getWebContents() === event.sender) { toast.close(); break; }
       }
-      if (this.#mainWindow && !this.#mainWindow.isDestroyed()) { this.#mainWindow.show(); this.#mainWindow.focus(); }
+      if (typeof this.#mainWindow?.restoreWindow === 'function') {
+        this.#mainWindow.restoreWindow();
+      } else if (typeof this.#mainWindow?.show === 'function') {
+        this.#mainWindow.show();
+      }
       console.debug('[CustomNotificationManager] Toast action', { action: String(action || '').slice(0, 30) });
     } catch (error) {
       console.error('[CustomNotificationManager] Error handling toast action:', error);

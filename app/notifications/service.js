@@ -410,11 +410,12 @@ class NotificationService {
         if (isValidDeepLink && navigateToDeepLink()) return;
         const clickAction = this.#config.notifications?.electron?.clickAction ?? "show";
         if (clickAction === "none") return;
-        if (clickAction === "restore") {
-          this.#mainWindow.restoreWindow();
-        } else {
-          this.#mainWindow.show();
-        }
+        // Both clickActions must restore a minimized or tray-hidden window; a
+        // bare show() leaves it invisible and produces the "notifications fire
+        // but no screen" symptom. restoreWindow handles minimized + hidden +
+        // destroyed guards, so prefer it for both actions ("show" stays in
+        // notifications history as a focused reveal, now via the same path).
+        this.#mainWindow.restoreWindow();
       });
 
       if (actions) {
@@ -556,11 +557,9 @@ class NotificationService {
         const clickAction = this.#config.notifications?.electron?.clickAction ?? "show";
         console.debug(`[NOTIFICATIONS] Notification clicked, clickAction=${clickAction}`);
         if (clickAction === "none") return;
-        if (clickAction === "restore") {
-          this.#mainWindow.restoreWindow();
-        } else {
-          this.#mainWindow.show();
-        }
+        // See the parsed-notification handler above: use the restore path for
+        // both actions so minimized / tray-hidden windows come back.
+        this.#mainWindow.restoreWindow();
       });
 
       notification.on("close", () => {

@@ -135,7 +135,9 @@ class Menus {
   }
 
   open() {
-    if (!this.window.isVisible()) {
+    if (this.window.isMinimized()) {
+      this.window.restore();
+    } else if (!this.window.isVisible()) {
       this.window.show();
     }
 
@@ -168,7 +170,12 @@ class Menus {
 
   reload(show = true) {
     if (show) {
-      this.window.show();
+      if (this.window.isMinimized()) {
+        this.window.restore();
+      } else if (!this.window.isVisible()) {
+        this.window.show();
+      }
+      this.window.focus();
     }
 
     this.connectionManager.refresh();
@@ -315,8 +322,15 @@ class Menus {
       event.preventDefault();
       if (this.configGroup.startupConfig.minimizeOnClose) {
         this.window.minimize();
-      } else {
+      } else if (this.tray) {
         this.hide();
+      } else {
+        // No tray to restore a hidden window from — minimizing keeps the
+        // window in the taskbar/dock so the user can get it back. Without
+        // this, trayIconEnabled=false + closeAppOnCross=false hides the
+        // window with no affordance to restore it (notifications keep
+        // firing, but the screen stays empty).
+        this.window.minimize();
       }
     } else {
       this.tray?.close();

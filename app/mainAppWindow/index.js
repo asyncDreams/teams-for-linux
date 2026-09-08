@@ -844,7 +844,7 @@ exports.notifyRendererError = function (message, filename) {
 };
 
 exports.show = function () {
-  window.show();
+  restoreWindow();
 };
 
 // Restore if minimised, show if hidden to tray, then focus. Used by the
@@ -1080,6 +1080,7 @@ function onDidFrameFinishLoad(
 }
 
 function restoreWindow() {
+  if (!window || window.isDestroyed()) return;
   if (window.isMinimized()) {
     window.restore();
   } else if (!window.isVisible()) {
@@ -1418,6 +1419,13 @@ function addEventHandlers() {
   window.webContents.on("did-finish-load", onDidFinishLoad);
   window.webContents.on("did-frame-finish-load", onDidFrameFinishLoad);
   window.on("closed", onWindowClosed);
+  // Dock / taskbar activation (macOS click on the Dock icon, or some Linux
+  // window managers). Without this, a window that was hidden to tray stays
+  // hidden: the system delivers an 'activate' without a second-instance
+  // event, and nothing would bring the window back.
+  app.on("activate", () => {
+    if (window && !window.isDestroyed()) restoreWindow();
+  });
   window.webContents.addListener("before-input-event", onBeforeInput);
 
   // Navigation state change handlers
