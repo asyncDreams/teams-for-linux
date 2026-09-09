@@ -622,6 +622,15 @@ module.exports = {
         type: "boolean",
         applyMode: "restart",
       },
+      meetupJoinPopOutWindow: {
+        default: false,
+        describe:
+          "Open meeting joins in a dedicated meeting window (like native Teams) " +
+          "instead of navigating the main window. The main window stays on " +
+          "chat/calendar while the meeting runs in its own window",
+        type: "boolean",
+        applyMode: "restart",
+      },
       partition: {
         default: "persist:teams-4-linux",
         describe: "BrowserWindow webpreferences partition",

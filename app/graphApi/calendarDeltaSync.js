@@ -271,8 +271,14 @@ class CalendarDeltaSync {
  * @param {object} params.client GraphApiClient
  * @param {object} params.config Resolved startup config
  * @param {CalendarDeltaSync|null} [params.deltaSync] Optional shared engine
+ * @param {function(string): boolean} [params.joinMeeting] Opens a join URL in
+ *   a pop-out meeting window; returns false when unavailable. The panel's
+ *   Join button prefers it and falls back to the main window's deep-link
+ *   navigation.
+ * @param {function(string): boolean} [params.navigateToTeamsUrl] Navigates
+ *   the main window to a Teams URL; defaults to the mainAppWindow export.
  */
-function registerCalendarPanelHandlers(ipcMain, { client, config, deltaSync = null, nowMs = Date.now }) {
+function registerCalendarPanelHandlers(ipcMain, { client, config, deltaSync = null, joinMeeting = null, navigateToTeamsUrl = null, nowMs = Date.now }) {
   // Read cached calendar events for the panel window (day window by default).
   ipcMain.handle('calendar-panel-get-events', async (_event, payload) => {
     if (!client) return { success: false, error: 'Graph API not enabled' };
@@ -351,6 +357,25 @@ function registerCalendarPanelHandlers(ipcMain, { client, config, deltaSync = nu
       return { success: true, response: parsed.response, event };
     } catch (error) {
       logger.error('[GRAPH_API] calendar-panel-respond failed:', { message: error.message });
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Join a meeting from the panel: prefers the pop-out meeting window when
+  // meetupJoinPopOutWindow is enabled, otherwise the main window's deep-link
+  // path (in-app navigation) so the URL never lands in an external browser.
+  ipcMain.handle('calendar-panel-join', async (_event, payload) => {
+    const url = typeof payload?.url === 'string' ? payload.url.trim() : '';
+    if (!url) return { success: false, error: 'No join URL provided' };
+    try {
+      if (typeof joinMeeting === 'function' && joinMeeting(url)) {
+        return { success: true, via: 'popout' };
+      }
+      const navigate = navigateToTeamsUrl ?? require('../mainAppWindow').navigateToTeamsUrl;
+      if (navigate(url)) return { success: true, via: 'main-window' };
+      return { success: false, error: 'Could not open the meeting URL' };
+    } catch (error) {
+      logger.error('[GRAPH_API] calendar-panel-join failed:', { message: error.message });
       return { success: false, error: error.message };
     }
   });

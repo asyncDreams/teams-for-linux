@@ -154,7 +154,15 @@
     empty.hidden = events.length !== 0;
     summary.textContent = events.length + (events.length === 1 ? ' meeting' : ' meetings');
     list.querySelectorAll('button[data-action="join"]').forEach((button) =>
-      button.addEventListener('click', () => window.open(button.dataset.url, '_blank')));
+      button.addEventListener('click', async () => {
+        // Route through the main process: pop-out meeting window when enabled,
+        // else the main window. The panel window has no Teams session, so it
+        // must never load the join URL itself.
+        button.disabled = true;
+        const result = await api.join({ url: button.dataset.url });
+        button.disabled = false;
+        if (!result?.success) showToast(result?.error || 'Could not open the meeting.', true);
+      }));
     list.querySelectorAll('button[data-action="respond"]').forEach((button) =>
       button.addEventListener('click', () => respondToEvent(button)));
   }

@@ -108,6 +108,7 @@ const allowedChannels = new Set([
   'calendar-panel-get-events',
   'calendar-panel-refresh',
   'calendar-panel-respond',
+  'calendar-panel-join',
 
   // Join meeting dialog
   'join-meeting-submit',

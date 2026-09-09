@@ -1,7 +1,7 @@
 {
   "$generatedBy": "scripts/generateConfigDocs.js",
   "source": "app/config/options.js",
-  "optionCount": 78,
+  "optionCount": 79,
   "options": [
     {
       "name": "appActiveCheckInterval",
@@ -679,6 +679,13 @@
       "type": "boolean",
       "default": true,
       "description": "Open meetupJoinRegEx URLs in the app instead of the default browser",
+      "applyMode": "restart"
+    },
+    {
+      "name": "meetupJoinPopOutWindow",
+      "type": "boolean",
+      "default": false,
+      "description": "Open meeting joins in a dedicated meeting window (like native Teams) instead of navigating the main window. The main window stays on chat/calendar while the meeting runs in its own window",
       "applyMode": "restart"
     },
     {

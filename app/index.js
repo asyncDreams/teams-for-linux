@@ -248,6 +248,9 @@ if (gotTheLock) {
       mailPoller.stop();
       mailPoller = null;
     }
+    // Pop-out meeting windows are BrowserWindows on the app's session; close
+    // them explicitly so quit is never blocked by a lingering meeting.
+    mainAppWindow.closeMeetingWindows();
     if (mqttClient) {
       await mqttClient.disconnect();
     }
@@ -788,6 +791,10 @@ function initializeGraphApiClient() {
       client: graphApiClient,
       config,
       deltaSync: calendarDeltaSync,
+      // Panel Join → pop-out meeting window when meetupJoinPopOutWindow is
+      // enabled; falls back to the main window's deep-link path inside the
+      // handler when this returns false.
+      joinMeeting: (url) => mainAppWindow.openMeetingWindow(url),
     });
 
     // Mail preview notifications (Phase 3): announce new inbox mail through

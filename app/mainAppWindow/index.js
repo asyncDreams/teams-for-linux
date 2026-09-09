@@ -21,6 +21,7 @@ require("../appConfiguration");
 const ConnectionManager = require("../connectionManager");
 const ssoPasswordPrefill = require("../ssoPasswordPrefill");
 const BrowserWindowManager = require("../mainAppWindow/browserWindowManager");
+const { MeetingWindowManager } = require("../mainAppWindow/meetingWindowManager");
 const os = require("node:os");
 const path = require("node:path");
 const teamsHosts = require("../config/defaults");
@@ -31,6 +32,7 @@ const DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG = {
 };
 
 let iconChooser;
+let meetingWindowManager;
 let intune;
 let isControlPressed = false;
 // ProfilesManager handle threaded through onAppReady so the Menus
@@ -707,6 +709,14 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   window = await browserWindowManager.createWindow();
   streamSelector = new StreamSelector(window);
 
+  // Meeting pop-out windows (native-Teams-style): share the main window's
+  // session partition so SSO cookies carry over, and reuse its icon.
+  meetingWindowManager = new MeetingWindowManager({
+    config,
+    iconImage: browserWindowManager.getIconImage(iconChooser?.getFile()),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#302a75" : "#fff",
+  });
+
   // Restrict WebRTC ICE candidate gathering to the interface with the default
   // route, preventing secondary interfaces (e.g. an ethernet adapter with no
   // internet gateway) from being advertised, which causes asymmetric STUN
@@ -829,6 +839,18 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   applyAppConfiguration(config, window);
 };
 
+// Join-by-argument at startup: with the pop-out feature enabled, a
+// meetup-join URL passed on the command line opens a meeting window instead
+// of navigating the freshly-started main window away.
+function shouldPopOutJoinUrl(url) {
+  return Boolean(
+    config.meetupJoinPopOutWindow &&
+      url &&
+      new RegExp(config.meetupJoinRegEx).test(url) &&
+      meetingWindowManager?.isEnabled()
+  );
+}
+
 function onSpellCheckerLanguageChanged(languages) {
   appConfig.legacyConfigStore.set("spellCheckerLanguages", languages);
 }
@@ -907,6 +929,13 @@ exports.navigateToTeamsUrl = function (url) {
     }
     if (!teamsHosts.isValidTeamsUrl(target)) return false;
     const normalized = teamsHosts.normalizeTeamsUrl(target);
+    // Deep links to meetings pop out too when the feature is on — a
+    // notification or history entry for a meeting should not navigate the
+    // main window away.
+    if (shouldPopOutJoinUrl(normalized)) {
+      meetingWindowManager?.openMeeting(normalized);
+      return true;
+    }
     window.loadURL(normalized, { userAgent: config?.chromeUserAgent });
     restoreWindow();
     return true;
@@ -925,11 +954,41 @@ exports.onAppSecondInstance = function onAppSecondInstance(event, args) {
       setTimeout(() => {
         allowFurtherRequests = true;
       }, 5000);
-      window.loadURL(url, { userAgent: config.chromeUserAgent });
+      if (shouldPopOutJoinUrl(url)) {
+        meetingWindowManager?.openMeeting(url);
+      } else {
+        window.loadURL(url, { userAgent: config.chromeUserAgent });
+      }
     }
 
     restoreWindow();
   }
+};
+
+/**
+ * Opens a meeting join URL in a dedicated pop-out meeting window
+ * (meetupJoinPopOutWindow). Returns false when the feature is disabled
+ * or the URL could not be opened; callers then fall back to the main
+ * window.
+ * @param {string} url - normalized https Teams join URL
+ * @returns {boolean}
+ */
+exports.openMeetingWindow = function (url) {
+  if (!meetingWindowManager?.isEnabled()) return false;
+  try {
+    const target =
+      config?.hosts?.autoRedirect !== false
+        ? teamsHosts.normalizeTeamsUrl(url)
+        : url;
+    return Boolean(meetingWindowManager.openMeeting(target));
+  } catch {
+    return false;
+  }
+};
+
+/** Closes every open pop-out meeting window. Called on app quit. */
+exports.closeMeetingWindows = function () {
+  meetingWindowManager?.closeAll();
 };
 
 function applyAppConfiguration(config, window) {
@@ -1326,6 +1385,14 @@ function onNewWindow(details) {
         config?.hosts?.autoRedirect !== false
           ? teamsHosts.normalizeTeamsUrl(details.url)
           : details.url;
+      if (config.meetupJoinPopOutWindow) {
+        // Native-Teams-style pop-out: host the meeting in its own window
+        // sharing the main window's session partition; the main window
+        // stays on chat/calendar. Deny the child popup — the manager's
+        // window already loads the URL.
+        meetingWindowManager?.openMeeting(targetUrl);
+        return { action: "deny" };
+      }
       window.loadURL(targetUrl, { userAgent: config.chromeUserAgent });
     }
     return { action: "deny" };

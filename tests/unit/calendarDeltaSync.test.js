@@ -268,4 +268,58 @@ describe('registerCalendarPanelHandlers', () => {
     const result = await get(null, {});
     assert.equal(result.success, false);
   });
+
+  describe('calendar-panel-join', () => {
+    it('routes through the pop-out join callback when it succeeds', async () => {
+      const ipcMain = makeIpcMain();
+      const joins = [];
+      registerCalendarPanelHandlers(ipcMain, {
+        client: makeFakeGraphClient([]),
+        config: {},
+        deltaSync: null,
+        joinMeeting: (url) => {
+          joins.push(url);
+          return true;
+        },
+      });
+      const join = ipcMain.handlers.get('calendar-panel-join');
+      const result = await join(null, { url: 'https://teams.cloud.microsoft/l/meetup-join/19:meeting_x@thread.v2/0' });
+      assert.equal(result.success, true);
+      assert.equal(result.via, 'popout');
+      assert.equal(joins.length, 1);
+    });
+
+    it('falls back to main-window navigation when the pop-out is unavailable', async () => {
+      const ipcMain = makeIpcMain();
+      const navigateCalls = [];
+      registerCalendarPanelHandlers(ipcMain, {
+        client: makeFakeGraphClient([]),
+        config: {},
+        deltaSync: null,
+        joinMeeting: () => false,
+        navigateToTeamsUrl: (url) => {
+          navigateCalls.push(url);
+          return true;
+        },
+      });
+      const join = ipcMain.handlers.get('calendar-panel-join');
+      const result = await join(null, { url: 'https://teams.cloud.microsoft/l/meetup-join/19:meeting_x@thread.v2/0' });
+      assert.equal(result.success, true);
+      assert.equal(result.via, 'main-window');
+      assert.equal(navigateCalls.length, 1);
+    });
+
+    it('rejects missing URLs', async () => {
+      const ipcMain = makeIpcMain();
+      registerCalendarPanelHandlers(ipcMain, {
+        client: makeFakeGraphClient([]),
+        config: {},
+        deltaSync: null,
+        joinMeeting: () => true,
+      });
+      const join = ipcMain.handlers.get('calendar-panel-join');
+      assert.equal((await join(null, {})).success, false);
+      assert.equal((await join(null, { url: '   ' })).success, false);
+    });
+  });
 });
