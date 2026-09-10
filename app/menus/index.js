@@ -23,6 +23,8 @@ const NotificationHistoryWindow = require("../notifications/historyWindow");
 const CalendarPanelWindow = require("../graphApi/calendarPanelWindow");
 const DiagnosticsWindow = require("../diagnostics/diagnosticsWindow");
 const GpuInfoWindow = require("../gpuInfoWindow");
+const ConfigSettingsService = require("../settings/configSettingsService");
+const SettingsWindow = require("../settings/settingsWindow");
 const JoinMeetingDialog = require("../joinMeetingDialog");
 const AddProfileDialog = require("../profileDialogs/addProfile");
 const ManageProfileDialog = require("../profileDialogs/manageProfile");
@@ -54,6 +56,16 @@ class Menus {
     this.calendarPanelWindow = new CalendarPanelWindow(this.window);
     this.diagnosticsWindow = new DiagnosticsWindow(this.window);
     this.gpuInfoWindow = new GpuInfoWindow();
+    // In-app configuration UI (Phase 3b of the config-UX research). The
+    // service persists validated overrides through the same config store the
+    // menu toggles use, and live options are broadcast to the Teams renderer
+    // through updateMenu() so both paths stay in lockstep.
+    this.configSettingsService = new ConfigSettingsService(this.configGroup, {
+      onLiveChange: () => this.updateMenu(),
+      onRestart: () => this.restartForConfig(),
+    });
+    this.configSettingsService.initialize();
+    this.settingsWindow = new SettingsWindow(this.window);
     this.joinMeetingDialog = new JoinMeetingDialog(
       this.window,
       this.configGroup.startupConfig.meetupJoinRegEx
@@ -691,6 +703,20 @@ class Menus {
 
   openDiagnostics() {
     this.diagnosticsWindow.show();
+  }
+
+  /** Open the Settings > Configuration in-app settings window. */
+  openConfiguration() {
+    this.settingsWindow.show();
+  }
+
+  /**
+   * Full app restart so config changes that are read once at boot (command
+   * line switches, boot merge) take effect. Mirrors restartApp() in index.js.
+   */
+  restartForConfig() {
+    app.relaunch();
+    app.exit(0);
   }
 
   togglePresenceSync() {

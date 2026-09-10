@@ -211,6 +211,13 @@ function getSettingsMenu(Menus) {
     label: "Settings",
     submenu: [
       {
+        label: "Configuration…",
+        click: () => Menus.openConfiguration(),
+      },
+      {
+        type: "separator",
+      },
+      {
         label: "Save",
         click: () => Menus.saveSettings(),
       },

@@ -204,7 +204,16 @@ const allowedChannels = new Set([
   'notification-history-clear-all',
   'notification-history-export',
   'notification-history-unread-count',
-  'notification-history-open'
+  'notification-history-open',
+
+  // In-app configuration settings window (Phase 3b config-UX). Handlers live
+  // in app/settings/configSettingsService.js; values are validated against
+  // the options.js schema before touching the config store.
+  'settings-config-schema',
+  'settings-config-values',
+  'settings-config-set',
+  'settings-config-reset',
+  'settings-config-restart'
 ]);
 
 const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);

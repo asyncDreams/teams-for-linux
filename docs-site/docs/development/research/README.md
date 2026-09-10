@@ -15,8 +15,10 @@ Everything listed here describes work that has **not** fully shipped. Once a pie
 - **[Documentation, Contributing, and Config UX](documentation-and-config-ux-research.md)**, `app/config/options.js` as the single source of truth feeding generated docs, an in-app settings UI, and startup validation ([#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
   - **Phases 0 to 2 shipped (v2.12.0)**: drift fixes ([PR #2602](https://github.com/IsmaelMartinez/teams-for-linux/pull/2602)), generated config reference plus `config-schema.json` with CI drift guard ([PR #2604](https://github.com/IsmaelMartinez/teams-for-linux/pull/2604)), interactive config explorer in the docs site ([PR #2606](https://github.com/IsmaelMartinez/teams-for-linux/pull/2606))
   - **Phases 3a and 4 implemented**: per-option `applyMode` and nested-field metadata with a hard-failing generator lint, plus warn-only startup validation in `app/config/validator.js`
-  - **Remaining**: Phase 3b, the in-app settings window, now unblocked by the 3a schema metadata
+  - **Phase 3b implemented**: the in-app settings window (`app/settings/`, Settings → Configuration…) renders the schema, validates writes against it, persists override deltas through the existing config store, and reuses the `config-changed` live path plus relaunch for the rest
+  - **Remaining**: nothing — research fully shipped; close out to an ADR on the next docs pass
 
+- **[Call Pop-Out Flow](call-pop-out-flow-research.md)**, native-Teams-style in-chat call buttons opening the call in a dedicated window, riding the existing `meetupJoinPopOutWindow` meeting pop-out manager
 - **[Graph API Integration Research](graph-api-integration-research.md)**, Microsoft Graph API for enhanced features
   - **Phase 1 shipped (v2.7.4)**: token acquisition plus 7 IPC channels. People search and send chat power Quick Chat (ADR-014, ADR-015)
   - **Phases 2 and 3 not started**: calendar widget, mail preview, presence, settings UI

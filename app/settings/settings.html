@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration</title>
+  <link rel="stylesheet" href="../assets/css/fluent-parity.css">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      --accent: #5b5bd6;
+      --bg: #f7f8fc;
+      --panel: #ffffff;
+      --text: #242338;
+      --muted: #73728b;
+      --border: rgba(127, 125, 155, .25);
+      --danger: #b3261e;
+      --ok: #1c7c3c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #171722; --panel: #232332; --text: #f4f3ff; --muted: #aaa8c5; --border: rgba(170, 168, 197, .25); }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+    }
+    nav {
+      width: 220px;
+      min-width: 220px;
+      padding: 18px 10px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+    }
+    nav h1 { font-size: 15px; margin: 4px 8px 14px; letter-spacing: -.01em; }
+    nav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 8px 10px;
+      margin: 2px 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+    nav button:hover { background: rgba(91, 91, 214, .10); }
+    nav button.active { background: var(--accent); color: #fff; }
+    main { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
+    header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    header h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+    header .count { color: var(--muted); font-size: 12px; }
+    .search {
+      margin: 14px 0 4px;
+      width: 100%;
+      max-width: 420px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+    }
+    .opt {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+    .opt-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .opt-head code { font-size: 13px; font-weight: 600; }
+    .opt .desc { color: var(--muted); font-size: 12.5px; margin: 6px 0 10px; }
+    .tag {
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .tag.live { color: var(--ok); border-color: var(--ok); }
+    .tag.custom { color: var(--accent); border-color: var(--accent); }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    input[type="text"], input[type="number"], select, textarea {
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+    }
+    input[type="text"] { min-width: 260px; flex: 1; }
+    textarea { width: 100%; min-height: 90px; font-family: ui-monospace, monospace; font-size: 12px; }
+    button.action {
+      padding: 7px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.action.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button.action:disabled { opacity: .5; cursor: default; }
+    .msg { font-size: 12.5px; margin-left: 8px; }
+    .msg.error { color: var(--danger); }
+    .msg.ok { color: var(--ok); }
+    footer {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0 0;
+      border-top: 1px solid var(--border);
+      margin-top: 26px;
+      background: var(--bg);
+    }
+    footer .spacer { flex: 1; }
+    .hidden { display: none; }
+    .empty { color: var(--muted); padding: 30px 0; }
+  </style>
+</head>
+<body>
+  <nav id="nav">
+    <h1>Configuration</h1>
+    <div id="nav-items"></div>
+  </nav>
+  <main>
+    <header>
+      <h2 id="group-title">General</h2>
+      <span class="count" id="group-count"></span>
+    </header>
+    <input class="search" id="search" type="text" placeholder="Search all settings…" aria-label="Search settings">
+    <div id="options"></div>
+    <div class="empty hidden" id="empty">No settings match your search.</div>
+    <footer>
+      <button class="action secondary" id="reset-group">Reset this section</button>
+      <button class="action secondary" id="reset-all">Restore all defaults</button>
+      <span class="spacer"></span>
+      <span class="msg" id="restart-hint" title="Some changes only apply after a restart"></span>
+      <button class="action" id="restart">Restart app</button>
+    </footer>
+  </main>
+
+  <script src="settings.js"></script>
+</body>
+</html>
