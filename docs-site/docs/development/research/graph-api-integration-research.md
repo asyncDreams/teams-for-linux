@@ -23,20 +23,22 @@ This document tracks the research and implementation of Microsoft Graph API inte
 - [x] Security allowlist for IPC channels
 - [x] Documentation generation support
 
-### Phase 2: Enhanced Features (Not Started)
+### Phase 2: Enhanced Features
 
-- [ ] Calendar sync with desktop notifications
-- [ ] Presence status indicators
-- [ ] Mail integration
-- [ ] Error handling improvements
-- [ ] Retry logic with exponential backoff
+- [x] Presence hybrid (T2B, shipped): `graph-api-get-presence` IPC channel plus renderer-side integration into the presence aggregator (`app/presence/sync.js`, `app/browser/tools/mqttStatusMonitor.js`). 403/empty responses downgrade to DOM-only presence without surfacing an error; per-provider backoff with bounded diagnostics.
+- [x] Calendar-as-presence-provider (shipped): optional `presence.sync.calendar.*` polling of `graph-api-get-calendar-view` in `pollCalendarPresence()` to set Busy during (and optionally shortly before) meetings.
+- [x] Client resilience (shipped): `makeRequest` retries 429 (honoring `Retry-After` seconds or HTTP-date), 5xx on idempotent methods only, and refreshes the token once on 401. Non-retryable 4xx fail immediately. See `tests/unit/graphApiResilience.test.js`.
+- [x] Next-meeting tray surface (shipped): `app/graphApi/nextMeetingPoller.js` polls `graph-api-get-calendar-view` and renders the current or next busy-ish meeting in the tray tooltip via `graphApi.nextMeeting.*` (opt-in, off by default). Ongoing meetings show minutes remaining; upcoming ones show a countdown. See `tests/unit/nextMeetingPoller.test.js`.
+- [x] Calendar sync with efficient delta queries (shipped): `app/graphApi/calendarDeltaSync.js` implements an incremental `/me/calendarView/delta` engine (delta-link persistence, `@removed` tombstones, 7-day re-baselining, stale-event pruning) consumed by the calendar panel. Falls back to direct `calendarView` calls when disabled. See `tests/unit/calendarDeltaSync.test.js`.
+- [x] Mail preview notifications (shipped): `app/graphApi/mailPoller.js` polls `/me/messages` (opt-in `graphApi.mailPreview.*`, off by default) and announces new mail through `NotificationService.showMailPreview()` so history, sounds, and click actions match Teams notifications. Dedup is a bounded id set plus a newest-received cursor; the first poll only announces mail from the last 5 minutes to avoid a history replay. See `tests/unit/mailPoller.test.js`.
+- [ ] Settings UI for Graph API options (parked on the config-UX settings window, [#2597](https://github.com/IsmaelMartinez/teams-for-linux/issues/2597))
 
-### Phase 3: User-Facing Features (Not Started)
+### Phase 3: User-Facing Features
 
-- [ ] Calendar widget/panel
-- [ ] Quick actions for meetings
-- [ ] Mail preview notifications
-- [ ] Settings UI for Graph API options
+- [x] Next-meeting tray surface (shipped — see Phase 2)
+- [x] Calendar panel (shipped): `app/graphApi/calendarPanelWindow.js` opens a small frameless day/week window fed by the delta-sync cache (`calendar-panel-get-events` / `calendar-panel-refresh` IPC, allowlisted). Includes a refresh button and deep links into Teams for meetings with an online join URL. Mirrors the notification-history window pattern (window + preload + html).
+- [x] Mail preview notifications (shipped — see Phase 2)
+- [x] Quick actions for meetings (shipped): the calendar panel offers Accept / Tentative / Decline via `calendar-panel-respond`, backed by `app/graphApi/meetingActions.js` (Graph respond endpoints `/me/events/{id}/accept|tentativelyAccept|decline`). Organizer, past, and cancelled events are excluded; responses apply an optimistic `responseStatus` patch to the delta cache and a background sync confirms. Requires `Calendars.ReadWrite` consent; 403 surfaces as a panel error without crashing. See `tests/unit/meetingActions.test.js`.
 
 ## Architecture
 
@@ -46,6 +48,7 @@ This document tracks the research and implementation of Microsoft Graph API inte
 |------|---------|
 | `app/graphApi/index.js` | GraphApiClient class - token acquisition, API requests |
 | `app/graphApi/ipcHandlers.js` | IPC handler registration for renderer access |
+| `app/graphApi/nextMeetingPoller.js` | Next-meeting tray surface: polls the calendar view and publishes the current/next meeting to the tray tooltip |
 
 ### Files Modified
 
@@ -170,9 +173,9 @@ The Teams web app token has limited scopes. Some endpoints return **403 Forbidde
 | `/me` | ✅ Works | `User.Read` |
 | `/me/calendar/events` | ✅ Works | `Calendars.Read` |
 | `/me/messages` | ✅ Works | `Mail.Read` |
-| `/me/presence` | ❌ Forbidden | `Presence.Read` |
+| `/me/presence` | ⚠️ 403 without tenant consent | `Presence.Read` |
 
-The presence endpoint requires explicit consent that the Teams web app doesn't have.
+The presence endpoint requires explicit consent that the Teams web app token doesn't always have. The shipped presence hybrid treats 403 as an expected outcome: the presence aggregator downgrades to DOM-only presence and backs off before retrying Graph.
 
 ## Future Considerations
 

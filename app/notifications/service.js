@@ -80,6 +80,27 @@ class NotificationService {
     this.#historyService = historyService;
   }
 
+  /**
+   * Show a mail-preview notification from the Graph mail poller. Main-process
+   * callers use this instead of the renderer IPC path; it renders through the
+   * same #showNotification pipeline so history, sounds, and click actions
+   * behave identically to Teams notifications.
+   * @param {{ title: string, body: string, kind: string, conversation: string, deepLink: string|null, sender: object }} payload
+   */
+  showMailPreview(payload) {
+    const options = {
+      notificationId: crypto.randomUUID(),
+      title: String(payload?.title || "New mail"),
+      body: String(payload?.body || ""),
+      kind: payload?.kind || "mail",
+      sender: payload?.sender,
+      conversation: payload?.conversation,
+      deepLink: payload?.deepLink,
+      icon: undefined,
+    };
+    return this.#showNotification(options);
+  }
+
   initialize() {
     // Play notification sound for Teams messages and calls
     ipcMain.handle("play-notification-sound", this.#handlePlayNotificationSound.bind(this));
@@ -389,11 +410,12 @@ class NotificationService {
         if (isValidDeepLink && navigateToDeepLink()) return;
         const clickAction = this.#config.notifications?.electron?.clickAction ?? "show";
         if (clickAction === "none") return;
-        if (clickAction === "restore") {
-          this.#mainWindow.restoreWindow();
-        } else {
-          this.#mainWindow.show();
-        }
+        // Both clickActions must restore a minimized or tray-hidden window; a
+        // bare show() leaves it invisible and produces the "notifications fire
+        // but no screen" symptom. restoreWindow handles minimized + hidden +
+        // destroyed guards, so prefer it for both actions ("show" stays in
+        // notifications history as a focused reveal, now via the same path).
+        this.#mainWindow.restoreWindow();
       });
 
       if (actions) {
@@ -535,11 +557,9 @@ class NotificationService {
         const clickAction = this.#config.notifications?.electron?.clickAction ?? "show";
         console.debug(`[NOTIFICATIONS] Notification clicked, clickAction=${clickAction}`);
         if (clickAction === "none") return;
-        if (clickAction === "restore") {
-          this.#mainWindow.restoreWindow();
-        } else {
-          this.#mainWindow.show();
-        }
+        // See the parsed-notification handler above: use the restore path for
+        // both actions so minimized / tray-hidden windows come back.
+        this.#mainWindow.restoreWindow();
       });
 
       notification.on("close", () => {

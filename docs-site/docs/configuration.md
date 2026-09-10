@@ -584,6 +584,7 @@ A floating sticker panel that lists image files from a local folder and pastes t
 | `meetupJoinRegEx` | `string` | `^https://teams\\.(?:microsoft\\.com|live\\.com|cloud\\.microsoft)/(v2/\\?meetingjoin=|meet/|l/(?:app|call|channel|chat|entity|file|meet(?:ing|up-join)|message|task|team)/)` | Regex for Teams meetup-join and related links |
 | `msTeamsProtocols` | `object` | `{ v1: "^msteams:/(?:meet/\|l/(?:app\|call\|channel\|chat\|entity\|file\|meet(?:ing\|up-join)\|message\|task\|team)/)", v2: "^msteams://teams\\.(?:microsoft\\.com\|live\\.com\|cloud\\.microsoft)/(?:meet/\|l/(?:app\|call\|channel\|chat\|entity\|file\|meet(?:ing\|up-join)\|message\|task\|team)/)" }` | Regular expressions for Microsoft Teams protocol links (v1 = legacy `msteams:` scheme, v2 = host-based `msteams://` scheme) |
 | `onNewWindowOpenMeetupJoinUrlInApp` | `boolean` | `true` | Open meetupJoinRegEx URLs in the app instead of default browser |
+| `meetupJoinPopOutWindow` | `boolean` | `true` | Open meeting and call joins in a dedicated window (like native Teams) instead of navigating the main window. The main window stays on chat/calendar while the meeting runs in its own window. Shares the main window's session, so sign-in carries over. Covers joins from notifications, deep links, the calendar panel, Teams' own calendar, and the in-chat call button. Set to `false` to restore single-window behaviour |
 
 ### Keyboard Shortcuts
 
@@ -659,17 +660,26 @@ All topics use retained messages by default, ensuring subscribers receive the la
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `graphApi.enabled` | `boolean` | `false` | Enable Microsoft Graph API integration for calendar and mail access |
+| `graphApi.nextMeeting.enabled` | `boolean` | `false` | Show the current or next meeting in the tray tooltip (requires `graphApi.enabled` and a tray icon) |
+| `graphApi.nextMeeting.lookaheadMinutes` | `number` | `30` | How far ahead the tooltip searches the calendar for the next meeting (clamped to 5–120) |
+| `graphApi.nextMeeting.pollIntervalMs` | `number` | `60000` | Calendar poll interval for the next-meeting tooltip (clamped to 15s–10m) |
 
 ```json title="Example Configuration"
 {
   "graphApi": {
-    "enabled": true
+    "enabled": true,
+    "nextMeeting": {
+      "enabled": true
+    }
   }
 }
 ```
 
 > [!NOTE]
 > This feature uses Teams' existing authentication to access Microsoft Graph API endpoints. No additional login required. Currently supports reading user profile, calendar events, and mail messages.
+
+> [!TIP]
+> With `graphApi.nextMeeting.enabled`, the tray tooltip appends the current or next meeting: ongoing meetings render as `Meeting now: <title> (<n>m left)` and upcoming ones as `Next: <title> in <n>m`. Cancelled, all-day, and explicitly-Free events are never shown.
 
 ### Quick Chat
 

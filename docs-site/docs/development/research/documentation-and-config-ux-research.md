@@ -13,7 +13,7 @@ Research and design analysis. This document proposes a direction and a phased pl
 | Phase 2 — interactive config explorer in the docs site | Shipped (v2.12.0) | [PR #2606](https://github.com/IsmaelMartinez/teams-for-linux/pull/2606) |
 | Phase 3a — `applyMode` + nested-field metadata, with the hard-failing metadata lint from "Ambitious ideas" | Implemented | This change |
 | Phase 4 — warn-only startup validation of `config.json` | Implemented | This change (`app/config/validator.js`) |
-| Phase 3b — in-app settings window | Not started | Unblocked by Phase 3a; next phase, high risk |
+| Phase 3b — in-app settings window | Implemented | This change (`app/settings/`) |
 
 ## Executive Summary
 

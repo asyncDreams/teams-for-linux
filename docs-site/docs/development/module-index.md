@@ -50,6 +50,7 @@ User-facing features and integrations.
 | **Profiles Manager** | `app/profilesManager/` | Multi-account profile storage, switching, and lifecycle management | [ADR-020](./adr/020-multi-account-profile-switcher.md) |
 | **Profile Dialogs** | `app/profileDialogs/` | Add-profile, manage-profiles, and switch-profile UI dialogs | [ADR-020](./adr/020-multi-account-profile-switcher.md) |
 | **Join Meeting Dialog** | `app/joinMeetingDialog/` | Join Meeting dialog for deep-link navigation handling | — |
+| **Configuration Settings** | `app/settings/` | In-app configuration UI (Settings → Configuration…): schema-driven from `app/config/options.js`, validated override persistence, live/restart apply modes | [README](https://github.com/IsmaelMartinez/teams-for-linux/blob/main/app/settings/README.md) |
 
 ## System Integration Modules
 

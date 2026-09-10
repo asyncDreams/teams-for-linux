@@ -19,6 +19,7 @@ exports = module.exports = (Menus) => ({
       click: () => Menus.returnToTeams(),
     },
     getViewMenu(Menus),
+    getToolsMenu(Menus),
     ...(Menus.configGroup.startupConfig.quickChat?.enabled
       ? [
           {
@@ -148,6 +149,18 @@ function getViewMenu(Menus) {
   };
 }
 
+function getToolsMenu(Menus) {
+  return {
+    label: "Tools",
+    submenu: [
+      {
+        label: "Calendar",
+        click: () => Menus.openCalendarPanel(),
+      },
+    ],
+  };
+}
+
 function getPresenceMenu(Menus) {
   const mode = Menus.configGroup.startupConfig.presence?.keepAlwaysOnlineMode
     || (Menus.configGroup.startupConfig.presence?.keepAlwaysOnline ? "always" : "disabled");
@@ -197,6 +210,13 @@ function getSettingsMenu(Menus) {
   return {
     label: "Settings",
     submenu: [
+      {
+        label: "Configuration…",
+        click: () => Menus.openConfiguration(),
+      },
+      {
+        type: "separator",
+      },
       {
         label: "Save",
         click: () => Menus.saveSettings(),

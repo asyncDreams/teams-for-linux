@@ -622,6 +622,17 @@ module.exports = {
         type: "boolean",
         applyMode: "restart",
       },
+      meetupJoinPopOutWindow: {
+        default: true,
+        describe:
+          "Open meeting and call joins in a dedicated window (like native Teams) " +
+          "instead of navigating the main window. The main window stays on " +
+          "chat/calendar while the meeting runs in its own window. Shares the " +
+          "main window's session, so sign-in carries over. Set to false to " +
+          "restore the single-window behaviour",
+        type: "boolean",
+        applyMode: "restart",
+      },
       partition: {
         default: "persist:teams-4-linux",
         describe: "BrowserWindow webpreferences partition",
@@ -1118,14 +1129,63 @@ module.exports = {
       graphApi: {
         default: {
           enabled: false,
+          nextMeeting: {
+            enabled: false,
+            lookaheadMinutes: 30,
+            pollIntervalMs: 60000,
+          },
+          calendar: {
+            enabled: false,
+            syncIntervalMs: 300000,
+          },
+          mailPreview: {
+            enabled: false,
+            pollIntervalMs: 300000,
+          },
         },
-        describe: "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.)",
+        describe:
+          "Microsoft Graph API integration for enhanced Teams functionality (calendar, user profile, etc.). nextMeeting.enabled: show the next (or current) meeting in the tray tooltip; requires graphApi.enabled. nextMeeting.lookaheadMinutes: how far ahead to look for the next meeting. nextMeeting.pollIntervalMs: calendar poll interval in milliseconds. calendar.enabled: keep an in-memory calendar cache refreshed with Graph delta queries and enable the Tools > Calendar panel; requires graphApi.enabled. calendar.syncIntervalMs: background delta-sync interval in milliseconds. mailPreview.enabled: show a system notification for new inbox mail; requires graphApi.enabled. mailPreview.pollIntervalMs: inbox poll interval in milliseconds.",
         type: "object",
         fields: {
           "enabled": {
             type: "boolean",
             describe:
               "Enable the Microsoft Graph API integration for calendar and mail access.",
+          },
+          "nextMeeting.enabled": {
+            type: "boolean",
+            describe:
+              "Show the current or next meeting in the tray tooltip; requires graphApi.enabled and a tray icon.",
+          },
+          "nextMeeting.lookaheadMinutes": {
+            type: "number",
+            describe:
+              "How far ahead (minutes) the next-meeting tray tooltip searches the calendar; clamped to 5-120.",
+          },
+          "nextMeeting.pollIntervalMs": {
+            type: "number",
+            describe:
+              "Poll interval in milliseconds for the next-meeting tray tooltip calendar fetch; clamped to 15s-10m.",
+          },
+          "calendar.enabled": {
+            type: "boolean",
+            describe:
+              "Keep an in-memory calendar refreshed with Graph delta queries and enable the Tools > Calendar panel; requires graphApi.enabled.",
+          },
+          "calendar.syncIntervalMs": {
+            type: "number",
+            describe:
+              "Background calendar delta-sync interval in milliseconds; clamped to 30s-60m.",
+          },
+          "mailPreview.enabled": {
+            type: "boolean",
+            describe:
+              "Show a system notification (with history entry) for new inbox mail; requires graphApi.enabled and Microsoft Mail.Read consent.",
+          },
+          "mailPreview.pollIntervalMs": {
+            type: "number",
+            describe:
+              "Inbox poll interval in milliseconds for mail preview notifications; clamped to 1m-30m.",
           },
         },
         applyMode: "restart",

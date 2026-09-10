@@ -21,6 +21,10 @@ require("../appConfiguration");
 const ConnectionManager = require("../connectionManager");
 const ssoPasswordPrefill = require("../ssoPasswordPrefill");
 const BrowserWindowManager = require("../mainAppWindow/browserWindowManager");
+const {
+  MeetingWindowManager,
+  isCallOrMeetingRouteUrl,
+} = require("../mainAppWindow/meetingWindowManager");
 const os = require("node:os");
 const path = require("node:path");
 const teamsHosts = require("../config/defaults");
@@ -31,6 +35,7 @@ const DEFAULT_SCREEN_SHARING_THUMBNAIL_CONFIG = {
 };
 
 let iconChooser;
+let meetingWindowManager;
 let intune;
 let isControlPressed = false;
 // ProfilesManager handle threaded through onAppReady so the Menus
@@ -707,6 +712,14 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   window = await browserWindowManager.createWindow();
   streamSelector = new StreamSelector(window);
 
+  // Meeting pop-out windows (native-Teams-style): share the main window's
+  // session partition so SSO cookies carry over, and reuse its icon.
+  meetingWindowManager = new MeetingWindowManager({
+    config,
+    iconImage: browserWindowManager.getIconImage(iconChooser?.getFile()),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#302a75" : "#fff",
+  });
+
   // Restrict WebRTC ICE candidate gathering to the interface with the default
   // route, preventing secondary interfaces (e.g. an ethernet adapter with no
   // internet gateway) from being advertised, which causes asymmetric STUN
@@ -829,6 +842,22 @@ exports.onAppReady = async function onAppReady(configGroup, customBackground, sh
   applyAppConfiguration(config, window);
 };
 
+// Join-by-argument at startup: with the pop-out feature enabled, a
+// meetup-join URL passed on the command line opens a meeting window instead
+// of navigating the freshly-started main window away.
+function shouldPopOutJoinUrl(url) {
+  return Boolean(
+    config.meetupJoinPopOutWindow &&
+      url &&
+      new RegExp(config.meetupJoinRegEx).test(url) &&
+      meetingWindowManager?.isEnabled()
+  );
+}
+
+// Route-shape matcher for in-page call/meeting navigations lives in
+// meetingWindowManager.js (isCallOrMeetingRouteUrl) so it stays unit-testable
+// without loading this module's Electron surface.
+
 function onSpellCheckerLanguageChanged(languages) {
   appConfig.legacyConfigStore.set("spellCheckerLanguages", languages);
 }
@@ -844,7 +873,7 @@ exports.notifyRendererError = function (message, filename) {
 };
 
 exports.show = function () {
-  window.show();
+  restoreWindow();
 };
 
 // Restore if minimised, show if hidden to tray, then focus. Used by the
@@ -873,6 +902,18 @@ exports.setNotificationHistoryService = function (service) {
   }
 };
 
+// Hands the tray (when trayIconEnabled) to a consumer such as the
+// next-meeting poller; null when the tray is disabled or not yet created.
+// Consumers must treat null as "surface unavailable" and stay idle.
+exports.getTray = function () {
+  return menus?.tray ?? null;
+};
+
+/** Accessor for the Menus instance (null before onAppReady). */
+exports.getMenus = function () {
+  return menus;
+};
+
 /**
  * Navigates the main window to a Teams deep link (https://teams… or
  * msteams://…). Legacy hosts are canonicalized; invalid or external URLs are
@@ -895,6 +936,13 @@ exports.navigateToTeamsUrl = function (url) {
     }
     if (!teamsHosts.isValidTeamsUrl(target)) return false;
     const normalized = teamsHosts.normalizeTeamsUrl(target);
+    // Deep links to meetings pop out too when the feature is on — a
+    // notification or history entry for a meeting should not navigate the
+    // main window away.
+    if (shouldPopOutJoinUrl(normalized)) {
+      meetingWindowManager?.openMeeting(normalized);
+      return true;
+    }
     window.loadURL(normalized, { userAgent: config?.chromeUserAgent });
     restoreWindow();
     return true;
@@ -913,11 +961,41 @@ exports.onAppSecondInstance = function onAppSecondInstance(event, args) {
       setTimeout(() => {
         allowFurtherRequests = true;
       }, 5000);
-      window.loadURL(url, { userAgent: config.chromeUserAgent });
+      if (shouldPopOutJoinUrl(url)) {
+        meetingWindowManager?.openMeeting(url);
+      } else {
+        window.loadURL(url, { userAgent: config.chromeUserAgent });
+      }
     }
 
     restoreWindow();
   }
+};
+
+/**
+ * Opens a meeting join URL in a dedicated pop-out meeting window
+ * (meetupJoinPopOutWindow). Returns false when the feature is disabled
+ * or the URL could not be opened; callers then fall back to the main
+ * window.
+ * @param {string} url - normalized https Teams join URL
+ * @returns {boolean}
+ */
+exports.openMeetingWindow = function (url) {
+  if (!meetingWindowManager?.isEnabled()) return false;
+  try {
+    const target =
+      config?.hosts?.autoRedirect !== false
+        ? teamsHosts.normalizeTeamsUrl(url)
+        : url;
+    return Boolean(meetingWindowManager.openMeeting(target));
+  } catch {
+    return false;
+  }
+};
+
+/** Closes every open pop-out meeting window. Called on app quit. */
+exports.closeMeetingWindows = function () {
+  meetingWindowManager?.closeAll();
 };
 
 function applyAppConfiguration(config, window) {
@@ -1068,6 +1146,7 @@ function onDidFrameFinishLoad(
 }
 
 function restoreWindow() {
+  if (!window || window.isDestroyed()) return;
   if (window.isMinimized()) {
     window.restore();
   } else if (!window.isVisible()) {
@@ -1313,6 +1392,14 @@ function onNewWindow(details) {
         config?.hosts?.autoRedirect !== false
           ? teamsHosts.normalizeTeamsUrl(details.url)
           : details.url;
+      if (config.meetupJoinPopOutWindow) {
+        // Native-Teams-style pop-out: host the meeting in its own window
+        // sharing the main window's session partition; the main window
+        // stays on chat/calendar. Deny the child popup — the manager's
+        // window already loads the URL.
+        meetingWindowManager?.openMeeting(targetUrl);
+        return { action: "deny" };
+      }
       window.loadURL(targetUrl, { userAgent: config.chromeUserAgent });
     }
     return { action: "deny" };
@@ -1350,6 +1437,63 @@ function onNavigationChanged() {
     const canGoBack = window.webContents.navigationHistory.canGoBack();
     const canGoForward = window.webContents.navigationHistory.canGoForward();
     window.webContents.send("navigation-state-changed", canGoBack, canGoForward);
+  }
+}
+
+/**
+ * Main-frame navigation interception for Teams' SPA route changes: when the
+ * calling/meeting surface is opened in-page (Teams' own calendar Join
+ * button, the in-chat call button), pop it out into a dedicated meeting
+ * window and rewind the main window so the chat/calendar stays put —
+ * native-Teams behaviour. Runs only when meetupJoinPopOutWindow is enabled;
+ * full-page navigations (did-navigate) to the same routes are NOT rewound
+ * (that would fight real reloads), only pop-outs are attempted.
+ */
+function handleInPageCallNavigation(url) {
+  if (!shouldPopOutJoinUrl(url) && !(config.meetupJoinPopOutWindow && isCallOrMeetingRouteUrl(url))) {
+    return false;
+  }
+  const target =
+    config?.hosts?.autoRedirect !== false
+      ? teamsHosts.normalizeTeamsUrl(url)
+      : url;
+  const popped = Boolean(meetingWindowManager?.openMeeting(target));
+  if (popped && window?.webContents?.navigationHistory?.canGoBack()) {
+    // Rewind the main window to the route the user was on (chat/calendar)
+    // so the calling surface only lives in the pop-out window.
+    window.webContents.navigationHistory.goBack();
+  }
+  return popped;
+}
+
+function onDidNavigateInPage(_event, url) {
+  onNavigationChanged();
+  try {
+    handleInPageCallNavigation(url);
+  } catch (error) {
+    console.debug("[POPOUT] in-page call navigation handling failed", {
+      code: error?.code,
+    });
+  }
+}
+
+function onDidNavigate(_event, url) {
+  onNavigationChanged();
+  // Full-page navigations: pop out without rewinding (a real reload of a
+  // meeting URL should still land in its own window, but history-wise the
+  // main window legitimately moved).
+  try {
+    if (config.meetupJoinPopOutWindow && isCallOrMeetingRouteUrl(url)) {
+      const target =
+        config?.hosts?.autoRedirect !== false
+          ? teamsHosts.normalizeTeamsUrl(url)
+          : url;
+      meetingWindowManager?.openMeeting(target);
+    }
+  } catch (error) {
+    console.debug("[POPOUT] full-page call navigation handling failed", {
+      code: error?.code,
+    });
   }
 }
 
@@ -1406,11 +1550,18 @@ function addEventHandlers() {
   window.webContents.on("did-finish-load", onDidFinishLoad);
   window.webContents.on("did-frame-finish-load", onDidFrameFinishLoad);
   window.on("closed", onWindowClosed);
+  // Dock / taskbar activation (macOS click on the Dock icon, or some Linux
+  // window managers). Without this, a window that was hidden to tray stays
+  // hidden: the system delivers an 'activate' without a second-instance
+  // event, and nothing would bring the window back.
+  app.on("activate", () => {
+    if (window && !window.isDestroyed()) restoreWindow();
+  });
   window.webContents.addListener("before-input-event", onBeforeInput);
 
   // Navigation state change handlers
-  window.webContents.on("did-navigate", onNavigationChanged);
-  window.webContents.on("did-navigate-in-page", onNavigationChanged);
+  window.webContents.on("did-navigate", onDidNavigate);
+  window.webContents.on("did-navigate-in-page", onDidNavigateInPage);
 
   // Pre-fill/advance the Microsoft/federated web login page (no-op unless one
   // of auth.webLogin.user / auth.webLogin.passwordCommand / auth.webLogin.verifyMethod is set).
