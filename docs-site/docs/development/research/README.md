@@ -18,7 +18,7 @@ Everything listed here describes work that has **not** fully shipped. Once a pie
   - **Phase 3b implemented**: the in-app settings window (`app/settings/`, Settings → Configuration…) renders the schema, validates writes against it, persists override deltas through the existing config store, and reuses the `config-changed` live path plus relaunch for the rest
   - **Remaining**: nothing — research fully shipped; close out to an ADR on the next docs pass
 
-- **[Call Pop-Out Flow](call-pop-out-flow-research.md)**, native-Teams-style in-chat call buttons opening the call in a dedicated window, riding the existing `meetupJoinPopOutWindow` meeting pop-out manager
+- **[Call Pop-Out Flow](call-pop-out-flow-research.md)**, native-Teams-style in-chat call buttons opening the call in a dedicated window. Phase A implemented: in-page call/meeting route interception via `isCallOrMeetingRouteUrl()` + `meetupJoinPopOutWindow` now defaulting to true
 - **[Graph API Integration Research](graph-api-integration-research.md)**, Microsoft Graph API for enhanced features
   - **Phase 1 shipped (v2.7.4)**: token acquisition plus 7 IPC channels. People search and send chat power Quick Chat (ADR-014, ADR-015)
   - **Phases 2 and 3 not started**: calendar widget, mail preview, presence, settings UI

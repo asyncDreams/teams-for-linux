@@ -1,10 +1,8 @@
 # Call Pop-Out Flow (in-chat calls in a dedicated window)
 
 :::note
-Research and design proposal. No behavior changes yet. Builds on the
-meeting pop-out shipped in `app/mainAppWindow/meetingWindowManager.js`
-(`meetupJoinPopOutWindow`) and the window-open interception in
-`app/mainAppWindow/index.js`.
+Phase A of this design is implemented (in-page route interception + pop-out
+default on). This document retains the analysis and the parked options.
 :::
 
 ## Problem
@@ -65,22 +63,20 @@ sees the URL **before** the SPA state changes.
 
 ## Chosen design (option 1), in phases
 
-- **Phase A — call routes pop out**: in `mainAppWindow`, when
-  `meetupJoinPopOutWindow` is on, intercept main-frame navigation to
-  `l/call/…` and delegate to `meetingWindowManager.openMeeting()`. The
-  main window's URL/route must be restored to the chat (history back) so
-  the chat stays visible. No new config option: the feature rides the
-  existing `meetupJoinPopOutWindow` flag, consistent with "calls are
-  meeting joins".
-- **Phase B — stay-in-window fallback**: when the call window fails to
-  open (limit reached, disabled mid-session), fall back to in-main-window
-  behaviour exactly as today.
+- **Phase A — call routes pop out (implemented)**: `mainAppWindow` listens
+  on `did-navigate` / `did-navigate-in-page`; when the main window lands on
+  a call/meeting route with `meetupJoinPopOutWindow` on, the URL is handed
+  to `meetingWindowManager.openMeeting()` and the main window's history is
+  rewound (`goBack()`) so the chat/calendar stays visible. The matcher is
+  the pure `isCallOrMeetingRouteUrl()` helper in
+  `meetingWindowManager.js` (path-shape only, host-table checked, unit
+  tested). `meetupJoinPopOutWindow` now defaults to `true`.
+- **Phase B — stay-in-window fallback (implemented)**: when pop-out fails
+  (window limit reached), the navigation simply stays in the main window —
+  the pre-feature behaviour.
 - **Phase C (optional, later)** — "reverse" mode as an opt-in
   `media.callPopOutMode: 'off' | 'popout' | 'reverse'` only if users ask
   for the chat-in-window variant; see option 2 for why it is parked.
-- **Test surface**: unit tests for a pure `isCallRouteUrl()` helper
-  (path-shape matching only, no PII); e2e stays on the meeting pop-out
-  suites since the call path shares the manager.
 
 ## Deliberately out of scope
 

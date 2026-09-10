@@ -623,11 +623,13 @@ module.exports = {
         applyMode: "restart",
       },
       meetupJoinPopOutWindow: {
-        default: false,
+        default: true,
         describe:
-          "Open meeting joins in a dedicated meeting window (like native Teams) " +
+          "Open meeting and call joins in a dedicated window (like native Teams) " +
           "instead of navigating the main window. The main window stays on " +
-          "chat/calendar while the meeting runs in its own window",
+          "chat/calendar while the meeting runs in its own window. Shares the " +
+          "main window's session, so sign-in carries over. Set to false to " +
+          "restore the single-window behaviour",
         type: "boolean",
         applyMode: "restart",
       },

@@ -21,7 +21,10 @@ require("../appConfiguration");
 const ConnectionManager = require("../connectionManager");
 const ssoPasswordPrefill = require("../ssoPasswordPrefill");
 const BrowserWindowManager = require("../mainAppWindow/browserWindowManager");
-const { MeetingWindowManager } = require("../mainAppWindow/meetingWindowManager");
+const {
+  MeetingWindowManager,
+  isCallOrMeetingRouteUrl,
+} = require("../mainAppWindow/meetingWindowManager");
 const os = require("node:os");
 const path = require("node:path");
 const teamsHosts = require("../config/defaults");
@@ -851,6 +854,10 @@ function shouldPopOutJoinUrl(url) {
   );
 }
 
+// Route-shape matcher for in-page call/meeting navigations lives in
+// meetingWindowManager.js (isCallOrMeetingRouteUrl) so it stays unit-testable
+// without loading this module's Electron surface.
+
 function onSpellCheckerLanguageChanged(languages) {
   appConfig.legacyConfigStore.set("spellCheckerLanguages", languages);
 }
@@ -1433,6 +1440,63 @@ function onNavigationChanged() {
   }
 }
 
+/**
+ * Main-frame navigation interception for Teams' SPA route changes: when the
+ * calling/meeting surface is opened in-page (Teams' own calendar Join
+ * button, the in-chat call button), pop it out into a dedicated meeting
+ * window and rewind the main window so the chat/calendar stays put —
+ * native-Teams behaviour. Runs only when meetupJoinPopOutWindow is enabled;
+ * full-page navigations (did-navigate) to the same routes are NOT rewound
+ * (that would fight real reloads), only pop-outs are attempted.
+ */
+function handleInPageCallNavigation(url) {
+  if (!shouldPopOutJoinUrl(url) && !(config.meetupJoinPopOutWindow && isCallOrMeetingRouteUrl(url))) {
+    return false;
+  }
+  const target =
+    config?.hosts?.autoRedirect !== false
+      ? teamsHosts.normalizeTeamsUrl(url)
+      : url;
+  const popped = Boolean(meetingWindowManager?.openMeeting(target));
+  if (popped && window?.webContents?.navigationHistory?.canGoBack()) {
+    // Rewind the main window to the route the user was on (chat/calendar)
+    // so the calling surface only lives in the pop-out window.
+    window.webContents.navigationHistory.goBack();
+  }
+  return popped;
+}
+
+function onDidNavigateInPage(_event, url) {
+  onNavigationChanged();
+  try {
+    handleInPageCallNavigation(url);
+  } catch (error) {
+    console.debug("[POPOUT] in-page call navigation handling failed", {
+      code: error?.code,
+    });
+  }
+}
+
+function onDidNavigate(_event, url) {
+  onNavigationChanged();
+  // Full-page navigations: pop out without rewinding (a real reload of a
+  // meeting URL should still land in its own window, but history-wise the
+  // main window legitimately moved).
+  try {
+    if (config.meetupJoinPopOutWindow && isCallOrMeetingRouteUrl(url)) {
+      const target =
+        config?.hosts?.autoRedirect !== false
+          ? teamsHosts.normalizeTeamsUrl(url)
+          : url;
+      meetingWindowManager?.openMeeting(target);
+    }
+  } catch (error) {
+    console.debug("[POPOUT] full-page call navigation handling failed", {
+      code: error?.code,
+    });
+  }
+}
+
 function onWindowClosed() {
   console.debug("window closed");
 
@@ -1496,8 +1560,8 @@ function addEventHandlers() {
   window.webContents.addListener("before-input-event", onBeforeInput);
 
   // Navigation state change handlers
-  window.webContents.on("did-navigate", onNavigationChanged);
-  window.webContents.on("did-navigate-in-page", onNavigationChanged);
+  window.webContents.on("did-navigate", onDidNavigate);
+  window.webContents.on("did-navigate-in-page", onDidNavigateInPage);
 
   // Pre-fill/advance the Microsoft/federated web login page (no-op unless one
   // of auth.webLogin.user / auth.webLogin.passwordCommand / auth.webLogin.verifyMethod is set).

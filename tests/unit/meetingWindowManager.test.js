@@ -7,6 +7,7 @@ const {
   MeetingWindowManager,
   extractMeetingKey,
   meetingWindowTitle,
+  isCallOrMeetingRouteUrl,
   MAX_MEETING_WINDOWS,
 } = require('../../app/mainAppWindow/meetingWindowManager');
 
@@ -226,5 +227,55 @@ describe('MeetingWindowManager', () => {
     assert.equal(manager.openMeeting(''), null);
     assert.equal(manager.openMeeting(null), null);
     assert.equal(manager.size, 0);
+  });
+
+  it('constructs without an injected createWindow (production path)', () => {
+    // Production builds the manager without deps; the BrowserWindow default
+    // is only invoked on openMeeting, so constructing must not throw.
+    const manager = new MeetingWindowManager({ config: baseConfig() });
+    assert.equal(manager.isEnabled(), true);
+    assert.equal(manager.size, 0);
+  });
+});
+
+describe('isCallOrMeetingRouteUrl', () => {
+  it('matches meeting and call route shapes', () => {
+    assert.equal(
+      isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/l/meetup-join/19%3Ameeting_x%40thread.v2/0?context={}'),
+      true,
+      'meetup-join route'
+    );
+    assert.equal(
+      isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/l/call/0/0/0?transcriptId=x'),
+      true,
+      'in-chat call route'
+    );
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/meet/abc123'), true, 'short meet route');
+    assert.equal(
+      isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/v2/call/abc'),
+      true,
+      'v2 call route'
+    );
+    assert.equal(
+      isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/v2/?meetingjoin=abc'),
+      true,
+      'classic calling container'
+    );
+  });
+
+  it('does not match ordinary Teams surfaces', () => {
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/l/chats/19:x@thread.v2'), false, 'chats route');
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/l/channel/19:x/General'), false, 'channel route');
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/calendar'), false, 'calendar route');
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/l/app/abc'), false, 'app route');
+    assert.equal(isCallOrMeetingRouteUrl('https://teams.cloud.microsoft/v2/'), false, 'v2 without meetingjoin');
+  });
+
+  it('rejects non-Teams hosts, non-http protocols and garbage', () => {
+    assert.equal(isCallOrMeetingRouteUrl('https://evil.example.com/l/call/0/0/0'), false, 'foreign host');
+    assert.equal(isCallOrMeetingRouteUrl('msteams://teams.cloud.microsoft/l/call/0/0/0'), false, 'non-http protocol');
+    assert.equal(isCallOrMeetingRouteUrl(''), false, 'empty');
+    assert.equal(isCallOrMeetingRouteUrl(null), false, 'null');
+    assert.equal(isCallOrMeetingRouteUrl('not a url'), false, 'unparseable');
   });
 });

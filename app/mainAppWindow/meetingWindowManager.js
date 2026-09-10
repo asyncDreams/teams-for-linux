@@ -16,6 +16,7 @@
 
 const { BrowserWindow } = require('electron');
 const path = require('node:path');
+const { isTeamsHost } = require('../config/defaults');
 
 /** Maximum simultaneously open meeting windows (leak guard). */
 const MAX_MEETING_WINDOWS = 4;
@@ -72,6 +73,39 @@ function meetingWindowTitle() {
 }
 
 /**
+ * Matches Teams meeting/call *route* URLs — the shapes the main window
+ * navigates to in-page when the user joins from Teams' own calendar or
+ * clicks the in-chat call button (SPA route changes, not window.open
+ * popups, so no window-open handler sees them). Used to pop those surfaces
+ * out into a dedicated meeting window when meetupJoinPopOutWindow is on.
+ *
+ * Path-shape matching only — no query strings, no user data. Pure function:
+ * no Electron, no module state.
+ *
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isCallOrMeetingRouteUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (!isTeamsHost(parsed.hostname)) return false;
+    const path = parsed.pathname;
+    return (
+      /^\/l\/meetup-join\//.test(path) ||
+      /^\/l\/call\//.test(path) ||
+      /^\/meet(\/|$)/.test(path) ||
+      /^\/v2\/call(\/|$)/.test(path) ||
+      // Classic calling-container deep link: /v2/?meetingjoin=...
+      (path === '/v2/' && parsed.searchParams.has('meetingjoin'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Manages the set of open meeting pop-out windows.
  *
  * Injectable for tests: `deps.createWindow(options)` defaults to
@@ -90,7 +124,9 @@ class MeetingWindowManager {
     this.#config = config;
     this.#iconImage = iconImage ?? undefined;
     this.#backgroundColor = backgroundColor;
-    this.#createWindow = createWindow;
+    // Production omits createWindow and expects the real BrowserWindow
+    // constructor (the JSDoc above documents this); tests inject a fake.
+    this.#createWindow = createWindow ?? ((options) => new BrowserWindow(options));
     this.#now = now ?? Date.now;
   }
 
@@ -171,7 +207,7 @@ class MeetingWindowManager {
       }
     });
 
-    window.webContents.setWindowOpenHandler((details) => {
+    window.webContents.setWindowOpenHandler(() => {
       // Meeting sub-popups (pre-join device settings, reactions help, etc.):
       // allow as modal children, mirroring secureOpenLink's in-app mode.
       return {
@@ -259,5 +295,6 @@ module.exports = {
   MeetingWindowManager,
   extractMeetingKey,
   meetingWindowTitle,
+  isCallOrMeetingRouteUrl,
   MAX_MEETING_WINDOWS,
 };
